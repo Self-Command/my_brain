@@ -28,7 +28,7 @@ export async function resolveConfiguredLlm(signal?: AbortSignal) {
     const sources = [signal, request.signal].filter((source): source is AbortSignal => Boolean(source));
     const abort = () => linked.abort();
     sources.forEach((source) => { if (source.aborted) abort(); else source.addEventListener("abort", abort, { once: true }); });
-    try { return await providerFetch(url, { ...request, signal: linked.signal }); }
+    try { const result = await providerFetch(url, { ...request, signal: linked.signal }); assertCurrent(snapshot); return result; }
     finally { sources.forEach((source) => source.removeEventListener("abort", abort)); }
   });
 }

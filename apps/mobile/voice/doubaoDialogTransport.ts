@@ -91,6 +91,7 @@ export function createDoubaoDialogVoiceTransport(
   let onAudioReady: (() => void) | null = null;
   let onAudioReadyFailed: ((message: string) => void) | null = null;
   let pendingAsrText = "";
+  let rejectConnection: ((message: string) => void) | null = null;
 
   const transcriptListeners = new Set<(transcript: string) => void>();
   const playbackListeners = new Set<(playing: boolean) => void>();
@@ -150,15 +151,19 @@ export function createDoubaoDialogVoiceTransport(
         return;
       case VOLC_SERVER_EVENT.sessionStarted:
         sessionActive = true;
+        const startingSocket = ws;
         void (async () => {
           try {
             await connectDoubaoPlaybackPipeline();
-            micSession = await startDoubaoMicCapture((pcm) => {
+            if (!sessionActive || ws !== startingSocket) return;
+            const capture = await startDoubaoMicCapture((pcm) => {
               if (!sessionId || !sessionActive) {
                 return;
               }
               sendFrame(encodeDoubaoTaskRequest(sessionId, pcm));
             });
+            if (!sessionActive || ws !== startingSocket) { await capture.stop(); return; }
+            micSession = capture;
             if (sessionId) {
               sendFrame(encodeDoubaoSayHello(sessionId, "你好，我在听。"));
             }
@@ -223,6 +228,7 @@ export function createDoubaoDialogVoiceTransport(
   };
 
   const teardown = async () => {
+    rejectConnection?.("语音连接已取消"); rejectConnection = null;
     connected = false;
     sessionActive = false;
     audioReady = false;
@@ -230,22 +236,18 @@ export function createDoubaoDialogVoiceTransport(
     onAudioReady = null;
     onAudioReadyFailed = null;
     notifyPlayback(false);
+    const closingSocket = ws; const closingSession = sessionId;
+    ws = null; sessionId = null;
+    try {
+      if (closingSession) closingSocket?.send(encodeDoubaoFinishSession(closingSession).buffer);
+      closingSocket?.send(encodeDoubaoFinishConnection().buffer);
+    } catch { /* The socket may already be closed. */ }
+    closingSocket?.close();
     if (micSession) {
       await micSession.stop();
       micSession = null;
     }
     await teardownDoubaoAudio();
-    if (sessionId && ws) {
-      sendFrame(encodeDoubaoFinishSession(sessionId));
-      sessionId = null;
-    }
-    try {
-      sendFrame(encodeDoubaoFinishConnection());
-    } catch {
-      // socket may already be closed
-    }
-    ws?.close();
-    ws = null;
   };
 
   return {
@@ -287,6 +289,7 @@ export function createDoubaoDialogVoiceTransport(
           }
           settled = true;
           clearTimeout(timer);
+          rejectConnection = null;
           onAudioReady = null;
           onAudioReadyFailed = null;
           reject(new RealtimeVoiceTransportError(message));
@@ -298,6 +301,7 @@ export function createDoubaoDialogVoiceTransport(
           }
           settled = true;
           clearTimeout(timer);
+          rejectConnection = null;
           onAudioReady = null;
           onAudioReadyFailed = null;
           connected = true;
@@ -306,22 +310,25 @@ export function createDoubaoDialogVoiceTransport(
 
         onAudioReady = () => succeed();
         onAudioReadyFailed = (message) => {
-          void teardown();
           fail(message);
+          void teardown();
         };
 
         const timer = setTimeout(() => {
-          void teardown();
           fail("Doubao voice connection timeout");
+          void teardown();
         }, options.connectTimeoutMs ?? 20_000);
+        rejectConnection = fail;
 
         socket.onopen = () => {
+          if (socket !== ws) return;
           sendFrame(encodeDoubaoStartConnection());
         };
 
         socket.onmessage = (event) => {
           void (async () => {
             const data = await coerceMessageToArrayBuffer(event.data);
+            if (socket !== ws) return;
             if (!data) {
               if (__DEV__) {
                 console.warn("[doubao-voice] ignored non-binary frame", typeof event.data);
@@ -335,6 +342,7 @@ export function createDoubaoDialogVoiceTransport(
         socket.onerror = () => fail("Doubao voice WebSocket error");
 
         socket.onclose = (event) => {
+          if (socket !== ws) return;
           connected = false;
           if (!settled) {
             fail(

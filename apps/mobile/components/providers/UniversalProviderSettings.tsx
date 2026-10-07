@@ -4,7 +4,7 @@ import { createConfiguredLlmProvider, isProfileVerified, MIMO_VOICE_PRESETS, nor
 import { activeProfile, loadProviderProfiles, migrateProviderProfiles, profileReadiness, recordProfileVerification, saveProviderProfiles, subscribeProviderProfiles, updateServiceProfile } from "../../services/providerProfiles";
 import { cachedCatalog, discoverModels } from "../../services/providerCatalogStore";
 import { getSecureCredentialStore, maskCredentialLast4 } from "../../services/secureCredentialStore";
-import { providerFetch } from "../../services/providerHttp";
+import { providerFetchWithSignal } from "../../services/providerHttp";
 import { testDoubaoVoiceConnectionFromSettings } from "../../services/providerConfigStore";
 import { useMobileAppStore } from "../../stores/mobileAppStore";
 import { createTtsPlayback } from "../../voice/ttsPlayback";
@@ -88,9 +88,10 @@ function ProfileEditor({ profile, settings, onCandidate }: { profile: ServicePro
   const [refresh, setRefresh] = useState(0);
   const epoch = useRef(0);
   const preview = useRef<ReturnType<typeof createTtsPlayback> | null>(null);
+  const verificationAbort = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   useEffect(() => { setDraft(profile); }, [profile.configRevision, profile.credentialRevision]);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; epoch.current++; preview.current?.stop(); }; }, []);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; epoch.current++; verificationAbort.current?.abort(); preview.current?.stop(); }; }, []);
   useEffect(() => {
     void getSecureCredentialStore().getLast4(profile.credentialRef).then((value) => { if (mounted.current) setLast4(value); });
     if (profile.role === "realtime" || !profile.baseUrl.trim()) return;
@@ -133,6 +134,7 @@ function ProfileEditor({ profile, settings, onCandidate }: { profile: ServicePro
   };
   const verify = async () => {
     setBusy(true); disconnectActiveVoiceSession();
+    verificationAbort.current?.abort(); const operation = new AbortController(); verificationAbort.current = operation;
     let saved: ServiceProfile | undefined;
     let notice = "验证失败，可修正配置后重试";
     try {
@@ -140,7 +142,7 @@ function ProfileEditor({ profile, settings, onCandidate }: { profile: ServicePro
       const key = await getSecureCredentialStore().get(saved.credentialRef);
       let live = false;
       if (saved.role === "llm") {
-        const result = await createConfiguredLlmProvider({ endpoint: saved.baseUrl, model: saved.modelId }, key ?? "", providerFetch).testConnection();
+        const result = await createConfiguredLlmProvider({ endpoint: saved.baseUrl, model: saved.modelId }, key ?? "", providerFetchWithSignal(operation.signal)).testConnection();
         live = result.status === "connected";
         if (!live) throw new Error(result.errorCode ?? "语言模型调用失败");
       } else if (saved.role === "realtime") {
@@ -152,10 +154,10 @@ function ProfileEditor({ profile, settings, onCandidate }: { profile: ServicePro
         await preview.current.play("你好，语音配置测试。你可以随时停止播放。");
         live = true;
       }
-      if (!mounted.current) return;
+      if (!mounted.current || operation.signal.aborted) return;
       recordProfileVerification(saved, live); notice = "验证成功，可启用此配置。真机性能仍待验收。"; setMessage(notice);
     } catch (failure) {
-      if (saved && mounted.current) recordProfileVerification(saved, false);
+      if (saved && mounted.current && !operation.signal.aborted) recordProfileVerification(saved, false);
       notice = failure instanceof Error ? failure.message : "验证失败";
       if (mounted.current) setMessage(notice);
     } finally { if (mounted.current) { setBusy(false); if (saved?.id !== profile.id && saved) onCandidate(saved.id, notice); } }

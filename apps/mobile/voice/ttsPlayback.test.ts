@@ -7,7 +7,7 @@ vi.mock("../services/providerHttp", () => ({ providerHttpStream: vi.fn() }));
 vi.mock("../services/secureCredentialStore", () => ({ getSecureCredentialStore: () => ({ get: async () => "fixture-key" }) }));
 vi.mock("./doubaoPcmAudio", () => ({ ensureDoubaoAudioSession: async () => {} }));
 const profile: ServiceProfile = { id: "speech", displayName: "Speech", role: "tts", adapterId: "openai-audio-speech", baseUrl: "https://example.com/v1", modelId: "selected-tts", voiceId: "selected-voice", credentialRef: "profile.speech", configRevision: 1, credentialRevision: 1 };
-beforeEach(() => { vi.restoreAllMocks(); });
+beforeEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });
 describe("TTS playback cancellation and completion", () => {
   it("uses configured model and waits for native playback completion", async () => {
     vi.mocked(providerHttpStream).mockResolvedValue({ status: 200, close() {}, chunks: (async function* () { yield Uint8Array.of(1); yield Uint8Array.of(2, 3, 4); })() });
@@ -36,5 +36,21 @@ describe("TTS playback cancellation and completion", () => {
     const push = vi.spyOn(Pipeline, "pushAudioSync");
     await expect(createTtsPlayback(profile).play("test")).rejects.toThrow("401");
     expect(push).not.toHaveBeenCalled();
+  });
+  it("cancels the network and queued audio when the native audio focus is lost", async () => {
+    let loseFocus!: () => void; let deliver!: (response: HttpStream) => void;
+    const original = Pipeline.subscribe;
+    vi.spyOn(Pipeline, "subscribe").mockImplementation((event, callback) => {
+      if (event === "PipelineAudioFocusLost") loseFocus = () => callback({} as never);
+      return original(event, callback);
+    });
+    vi.mocked(providerHttpStream).mockImplementation(() => new Promise((resolve) => { deliver = resolve; }));
+    const invalidate = vi.spyOn(Pipeline, "invalidateTurn");
+    const playback = createTtsPlayback(profile); const failed = vi.fn(); playback.port.onError?.(failed);
+    const result = playback.play("waiting");
+    await vi.waitFor(() => expect(deliver).toBeTypeOf("function")); loseFocus();
+    expect(vi.mocked(providerHttpStream).mock.calls[0]![1].signal?.aborted).toBe(true);
+    deliver({ status: 200, close() {}, chunks: (async function* () { yield Uint8Array.of(1, 2); })() });
+    await expect(result).rejects.toThrow("取消"); expect(invalidate).toHaveBeenCalled(); expect(failed).toHaveBeenCalled();
   });
 });

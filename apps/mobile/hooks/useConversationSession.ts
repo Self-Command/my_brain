@@ -15,6 +15,7 @@ import {
 
 import { loadProviderSettings } from "../services/providerConfigStore";
 import { resolveConfiguredLlm } from "../services/configuredLlm";
+import { subscribeProviderProfiles } from "../services/providerProfiles";
 import { useMobileAppStore } from "../stores/mobileAppStore";
 import { useProvisionalStore } from "../stores/provisionalStore";
 
@@ -34,7 +35,10 @@ async function resolveConversationLlm(hasApiKey: boolean, signal?: AbortSignal):
 export function useConversationSession() {
   const pendingExplanation = useRef<Promise<string> | null>(null);
   const pendingAbort = useRef<AbortController | null>(null);
-  useEffect(() => () => pendingAbort.current?.abort(), []);
+  useEffect(() => {
+    const unsubscribe = subscribeProviderProfiles(() => { pendingAbort.current?.abort(); pendingExplanation.current = null; });
+    return () => { pendingAbort.current?.abort(); unsubscribe(); };
+  }, []);
   const conversation = useMobileAppStore((s) => s.conversation);
   const setConversation = useMobileAppStore((s) => s.setConversation);
   const graph = useMobileAppStore((s) => s.graph);

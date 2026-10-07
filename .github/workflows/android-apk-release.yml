@@ -59,7 +59,7 @@ jobs:
       - run: pnpm install --frozen-lockfile --prod=false
       - name: Set increasing upgrade version
         run: |
-          echo "ORG_GRADLE_PROJECT_mobileVersionCode=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          echo "ORG_GRADLE_PROJECT_mobileVersionCode=$(( $(date +%s) - 1700000000 ))" >> "$GITHUB_ENV"
           echo "ORG_GRADLE_PROJECT_mobileVersionName=0.2.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
       - name: Export production Android JavaScript
         working-directory: apps/mobile
@@ -78,8 +78,16 @@ jobs:
           cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk apk-release/my-brain-android.apk
           cp verification/verification.json apk-release/provider-verification.json
           cp apk-verification.json apk-release/
+          cp sensitive-scan.json apk-release/
           cp docs/development/provider-config-port/KNOWN_LIMITATIONS.md apk-release/known-limitations.md
           (cd apk-release && sha256sum my-brain-android.apk > my-brain-android.apk.sha256)
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: android-verification-diagnostics
+          path: |
+            sensitive-scan.json
+            apk-verification.json
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk

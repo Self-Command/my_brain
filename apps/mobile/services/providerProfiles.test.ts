@@ -71,6 +71,22 @@ describe("provider profile migration and readiness", () => {
     await expect(migrateProviderProfiles(createMemorySecureCredentialStore())).rejects.toThrow("损坏");
     expect(session.storage.getMeta("provider.settings.v1")).toBe("invalid-json"); expect(loadProviderProfiles()).toBeNull();
   });
+  it("keeps Doubao credentials while selecting exactly one composed or realtime voice mode", async () => {
+    const credentials = createMemorySecureCredentialStore(); await credentials.set("voice_api_key", "original-doubao-token");
+    const settings = await migrateProviderProfiles(credentials);
+    const doubao = activeProfile(settings, "voice")!;
+    const tts = { ...doubao, id: "tts", role: "tts" as const, adapterId: "chat-completions-audio" as const, baseUrl: "https://example.com/v1", modelId: "editable-tts", voiceId: "manual", credentialRef: "profile.tts" as const };
+    saveProviderProfiles({ ...settings, profiles: [...settings.profiles, tts] });
+    await credentials.set(tts.credentialRef, "separate-tts-key");
+    const current = loadProviderProfiles()!;
+    saveProviderProfiles({ ...current, voiceSelection: { mode: "composed", ttsProfileId: tts.id } });
+    expect(activeProfile(loadProviderProfiles()!, "voice")?.role).toBe("tts");
+    expect(await credentials.get("voice_api_key")).toBe("separate-tts-key");
+    expect(await credentials.get(doubao.credentialRef)).toBe("original-doubao-token");
+    saveProviderProfiles({ ...loadProviderProfiles()!, voiceSelection: { mode: "realtime", realtimeProfileId: doubao.id } });
+    expect(activeProfile(loadProviderProfiles()!, "voice")?.role).toBe("realtime");
+    expect(await credentials.get("voice_api_key")).toBe("original-doubao-token");
+  });
   it("retains malformed v2 settings and refuses to replace them using the legacy copy", async () => {
     session.storage.setMeta("provider.settings.v2", "{broken");
     await expect(migrateProviderProfiles(createMemorySecureCredentialStore())).rejects.toThrow("损坏");

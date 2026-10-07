@@ -14,6 +14,8 @@ export async function startDeviceStt(onTranscript: (text: string) => void, onSpe
   await serialize(async () => {
   await stopNativeStt();
   if (epoch !== generation) throw new Error("设备识别已取消");
+  if (!await Voice.isAvailable()) throw new Error("设备未安装可用的语音识别服务，可继续使用文字功能");
+  if (epoch !== generation) throw new Error("设备识别已取消");
   Voice.onSpeechResults = (event: SpeechResultsEvent) => {
     if (!active || epoch !== generation) return;
     const text = event.value?.[0]?.trim();

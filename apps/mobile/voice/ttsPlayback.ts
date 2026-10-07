@@ -32,9 +32,12 @@ export function createTtsPlayback(profile: ServiceProfile) {
     if (!key) throw new Error("请先保存 TTS API Key");
     let subscription: { remove(): void } | undefined;
     let errorSubscription: { remove(): void } | undefined;
+    let focusSubscription: { remove(): void } | undefined;
     let pipelineFailed = false;
+    let lastChunkQueued = false;
     let first = true;
     let bytes = 0;
+    const networkDeadline = setTimeout(() => active.abort(), 120_000);
     try {
       await ensureDoubaoAudioSession();
       if (epoch !== generation) throw new Error("语音播放已取消");
@@ -42,10 +45,14 @@ export function createTtsPlayback(profile: ServiceProfile) {
       if (epoch !== generation) throw new Error("语音播放已取消");
       let completed!: () => void;
       const playbackEnded = new Promise<void>((resolve) => { completed = resolve; settle = resolve; });
-      subscription = Pipeline.subscribe("PipelinePlaybackStopped", (event) => { if (event.turnId === id && epoch === generation) completed(); });
+      subscription = Pipeline.subscribe("PipelinePlaybackStopped", (event) => { if (lastChunkQueued && event.turnId === id && epoch === generation) completed(); });
       errorSubscription = Pipeline.onError(() => {
         if (epoch !== generation) return;
         pipelineFailed = true; active.abort(); completed();
+      });
+      focusSubscription = Pipeline.subscribe("PipelineAudioFocusLost", () => {
+        if (epoch !== generation) return;
+        stop(); errors.forEach((cb) => cb("系统音频中断，请恢复后重新连接语音"));
       });
       setPlaying(true);
       const response = await providerHttpStream(request.url, { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: request.body, signal: active.signal });
@@ -55,8 +62,9 @@ export function createTtsPlayback(profile: ServiceProfile) {
       const push = async (part: Uint8Array) => {
         const framed = pcm.push(part);
         if (!framed.length || epoch !== generation) return;
-        while (Pipeline.getTelemetry().bufferMs > 800 && epoch === generation) await new Promise((resolve) => setTimeout(resolve, 20));
+        while (Pipeline.getTelemetry().bufferMs > 800 && epoch === generation && !active.signal.aborted) await new Promise((resolve) => setTimeout(resolve, 20));
         if (epoch !== generation) throw new Error("语音播放已取消");
+        if (active.signal.aborted) throw new Error("TTS 请求已取消或超时");
         if (!Pipeline.pushAudioSync({ audio: base64(framed), turnId: id, isFirstChunk: first })) throw new Error("音频播放队列不可用");
         first = false; bytes += framed.length;
       };
@@ -68,7 +76,8 @@ export function createTtsPlayback(profile: ServiceProfile) {
       pcm.finish();
       if (epoch !== generation) throw new Error("语音播放已取消");
       if (!bytes) throw new Error("服务未返回音频，请检查模型与音色");
-      Pipeline.pushAudioSync({ audio: "", turnId: id, isLastChunk: true });
+      lastChunkQueued = true;
+      if (!Pipeline.pushAudioSync({ audio: "", turnId: id, isLastChunk: true })) throw new Error("音频队列结束失败");
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([playbackEnded, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("音频播放未完成")), 120_000); })]);
@@ -85,7 +94,9 @@ export function createTtsPlayback(profile: ServiceProfile) {
       throw new Error("语音播放已取消");
     } finally {
       subscription?.remove();
+      clearTimeout(networkDeadline);
       errorSubscription?.remove();
+      focusSubscription?.remove();
       if (epoch === generation) { controller = null; settle = null; setPlaying(false); }
     }
   };

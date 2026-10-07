@@ -116,6 +116,7 @@ export function CompanionChatScreen({
   if (!chat) return null;
 
   const send = (text: string) => {
+    if (busy) return;
     const trimmed = text.trim();
     if (!trimmed) {
       return;
@@ -170,10 +171,12 @@ export function CompanionChatScreen({
   };
 
   const onRejectMemory = () => {
+    activeRequest.current?.abort(); setBusy(false);
     setEphemeralChat(rejectEphemeralMemory(chat));
   };
 
   const onSaveFromPill = () => {
+    activeRequest.current?.abort(); setBusy(false);
     const lastUser = [...chat.turns].reverse().find((t) => t.role === "user");
     const text = lastUser?.text ?? (input.trim() || "陪聊片段");
     const candidate = addChatSaveCandidate(chat, `记下来：${text}`);

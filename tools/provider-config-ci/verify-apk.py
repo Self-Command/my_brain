@@ -29,9 +29,23 @@ with zipfile.ZipFile(apk) as archive:
     bundle = archive.read("assets/index.android.bundle")
     assert len(bundle) > 100_000, "Missing embedded production JS"
     assert not any(name.endswith((".env", ".env.local")) for name in archive.namelist())
-    # Scan values, not environment-variable names present in compiled configuration readers.
-    for pattern in [rb"sk-[A-Za-z0-9_-]{24,}", rb"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----", rb"github_pat_[A-Za-z0-9_]{40,}", rb"ghp_[A-Za-z0-9]{30,}"]:
-        assert not re.search(pattern, bundle), "Sensitive value detected in embedded JS"
+    # Hermes concatenates interned strings without separators; raw regexes can join
+    # unrelated strings or mistake the 'sk-' inside 'task-' for a credential.
+    bundle_path = pathlib.Path("provider-bundle.hbc"); bundle_path.write_bytes(bundle)
+    package_path = subprocess.check_output(["node", "-p", "require.resolve('react-native/package.json', {paths:['./apps/mobile']})"], text=True).strip()
+    compiler = pathlib.Path(package_path).parent / "sdks/hermesc/linux64-bin/hermesc"
+    decoded = subprocess.check_output([str(compiler), "-dump-bytecode", str(bundle_path)], text=True)
+    findings = []
+    rules = {
+        "openai-key": r"(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{24,}",
+        "github-token": r"(?<![A-Za-z0-9_])(?:github_pat_[A-Za-z0-9_]{40,}|ghp_[A-Za-z0-9]{30,})",
+        "private-key": r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----(?:\\n|\s)+[A-Za-z0-9+/=]{40,}",
+    }
+    for rule, pattern in rules.items():
+        for match in re.finditer(pattern, decoded):
+            findings.append({"rule": rule, "length": len(match.group()), "valueSha256": hashlib.sha256(match.group().encode()).hexdigest()})
+    pathlib.Path("sensitive-scan.json").write_text(json.dumps({"findings": findings}, indent=2))
+    assert not findings, "Sensitive value detected; fingerprints recorded without disclosing values"
     assert b"api.krill-code.net" not in bundle, "Donor relay must not be shipped"
 sha = hashlib.sha256(apk.read_bytes()).hexdigest()
 pathlib.Path("apk-verification.json").write_text(json.dumps({

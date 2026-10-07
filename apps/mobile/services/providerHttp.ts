@@ -69,3 +69,12 @@ export async function providerFetch(url: string, request: HttpRequest) {
   const text = utf8Text(bytes);
   return { ok: response.status >= 200 && response.status < 300, status: response.status, url, text: async () => text, json: async (): Promise<unknown> => JSON.parse(text) };
 }
+export function providerFetchWithSignal(signal: AbortSignal) {
+  return async (url: string, request: HttpRequest) => {
+    const linked = new AbortController(); const abort = () => linked.abort();
+    const sources = [signal, request.signal].filter((source): source is AbortSignal => Boolean(source));
+    sources.forEach((source) => { if (source.aborted) abort(); else source.addEventListener("abort", abort, { once: true }); });
+    try { return await providerFetch(url, { ...request, signal: linked.signal }); }
+    finally { sources.forEach((source) => source.removeEventListener("abort", abort)); }
+  };
+}
