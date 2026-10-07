@@ -1,5 +1,8 @@
 name: Provider Emulator Diagnostics
 on:
+  push:
+    branches: ['codex/provider-config-port']
+    paths: ['.github/workflows/provider-emulator-probe.yml', 'tools/provider-config-ci/emulator-smoke.sh', 'tools/provider-config-ci/*settings.yaml']
   workflow_dispatch:
     inputs:
       apk_run:
@@ -9,6 +12,9 @@ on:
 permissions:
   contents: read
   actions: read
+concurrency:
+  group: emulator-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   emulator:
     runs-on: ubuntu-22.04
@@ -19,7 +25,7 @@ jobs:
         with:
           name: android-apk
           path: apk-release
-          run-id: ${{ inputs.apk_run }}
+          run-id: ${{ inputs.apk_run || '37565100321' }}
           github-token: ${{ github.token }}
       - uses: actions/setup-java@v4
         with:
