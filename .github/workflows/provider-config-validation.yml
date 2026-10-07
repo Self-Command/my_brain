@@ -79,4 +79,4 @@ jobs:
     uses: ./.github/workflows/android-apk-release.yml
     with:
       validation_run: ${{ format('{0}', github.run_id) }}
-      publish: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || github.ref == 'refs/heads/main' }}
+      publish: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || github.event_name == 'push' && github.ref == 'refs/heads/main' }}

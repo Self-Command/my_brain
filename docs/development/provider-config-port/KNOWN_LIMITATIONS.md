@@ -7,4 +7,5 @@
 - MiMo 音色列表为官方文档预置，非账号接口实时目录；其他音色可手填。未确认的音色目录接口不会自动探测。
 - 上游未提供 companion-registry.json 与设计 SVG，视觉基线比对标为 NOT_RUN；已检查的 18 条捕获路由、运行时 testID 与主题可读性仍执行。
 - 完整仓库基线遗留失败逐项列在 provider-verification.json；任何新增失败或移动端/共享核心失败阻断发布。
+- 原有 CI 的 check / visual-smoke / tauri-build 在 pnpm 安装阶段有相同版本声明冲突（workflow 声明 9，packageManager 为 9.15.5）。[基线运行](https://github.com/Self-Command/my_brain/actions/runs/37551806587) 与 [当前 PR 运行](https://github.com/Self-Command/my_brain/actions/runs/37564424173) 保留失败；本次新验证流水线固定 9.15.5，实际执行完整根类型 / lint / 测试，并对移动/core 及新增失败设门槛。
 - 测试版沿用此前固定 Android debug 签名，支持原应用覆盖升级。配置迁移保留 v1 配置副本与旧凭据，不清空脑图、画像。

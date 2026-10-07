@@ -36,7 +36,9 @@ with zipfile.ZipFile(apk) as archive:
     bundle_path = pathlib.Path("provider-bundle.hbc"); bundle_path.write_bytes(bundle)
     package_path = subprocess.check_output(["node", "-p", "require.resolve('react-native/package.json', {paths:['./apps/mobile']})"], text=True).strip()
     compiler = pathlib.Path(package_path).parent / "sdks/hermesc/linux64-bin/hermesc"
-    decoded = subprocess.check_output([str(compiler), "-dump-bytecode", str(bundle_path)], text=True)
+    # The disassembler can emit non-UTF8 bytes from interned strings. Latin-1
+    # preserves every byte and every ASCII credential instead of dropping errors.
+    decoded = subprocess.check_output([str(compiler), "-dump-bytecode", str(bundle_path)]).decode("latin-1")
     findings = []
     rules = {
         "openai-key": r"(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{24,}",
@@ -46,7 +48,7 @@ with zipfile.ZipFile(apk) as archive:
     for rule, pattern in rules.items():
         for match in re.finditer(pattern, decoded):
             findings.append({"rule": rule, "length": len(match.group()), "valueSha256": hashlib.sha256(match.group().encode()).hexdigest()})
-    pathlib.Path("sensitive-scan.json").write_text(json.dumps({"findings": findings}, indent=2))
+    pathlib.Path("sensitive-scan.json").write_text(json.dumps({"status": "FAIL" if findings else "PASS", "scanBasis": "Hermes disassembly; byte-preserving ASCII credential scan", "findings": findings}, indent=2))
     assert not findings, "Sensitive value detected; fingerprints recorded without disclosing values"
     assert b"api.krill-code.net" not in bundle, "Donor relay must not be shipped"
 sha = hashlib.sha256(apk.read_bytes()).hexdigest()

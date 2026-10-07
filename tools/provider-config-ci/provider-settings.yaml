@@ -6,12 +6,24 @@ appId: app.mybrain.personal
       id: provider-llm-endpoint
     timeout: 60000
 - assertVisible: https://example.com/proxy/v1
+- scrollUntilVisible:
+    element:
+      id: provider-llm-key-mask
+    direction: DOWN
 - assertVisible: .*ab12.*
+- scrollUntilVisible:
+    element:
+      id: provider-llm-model
+    direction: UP
 - tapOn:
     id: provider-llm-model
 - eraseText
 - inputText: user/manual-model
 - hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: provider-llm-save
+    direction: DOWN
 - tapOn:
     id: provider-llm-save
 - stopApp
