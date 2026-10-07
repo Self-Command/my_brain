@@ -5,19 +5,45 @@ import type { SecureCredentialStore } from "./secureCredentialStore";
 export const PROFILE_SETTINGS_KEY = "provider.settings.v2";
 const JOURNAL_KEY = "provider.migration.v2";
 const listeners = new Set<() => void>();
+function record(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
+function validProfile(value: unknown): value is ServiceProfile {
+  if (!record(value)) return false;
+  const roleMatches = value.role === "llm" ? value.adapterId === "openai-chat-completions"
+    : value.role === "realtime" ? value.adapterId === "doubao-realtime"
+      : value.role === "tts" && ["openai-audio-speech", "chat-completions-audio"].includes(String(value.adapterId));
+  return roleMatches && ["id", "displayName", "baseUrl", "modelId"].every((key) => typeof value[key] === "string")
+    && typeof value.credentialRef === "string" && value.credentialRef === `profile.${value.id}`
+    && Number.isInteger(value.configRevision) && Number(value.configRevision) > 0
+    && Number.isInteger(value.credentialRevision) && Number(value.credentialRevision) >= 0
+    && ["voiceId", "style", "appId", "region"].every((key) => value[key] === undefined || typeof value[key] === "string");
+}
+function validSettings(value: unknown): value is ProviderSettingsV2 {
+  if (!record(value) || value.schemaVersion !== 2 || !Array.isArray(value.profiles) || !value.profiles.every(validProfile)
+    || new Set(value.profiles.map((profile: ServiceProfile) => profile.id)).size !== value.profiles.length
+    || !record(value.voiceSelection) || !Array.isArray(value.verification)) return false;
+  const selection = value.voiceSelection;
+  const voiceId = selection.mode === "realtime" ? selection.realtimeProfileId : selection.mode === "composed" ? selection.ttsProfileId : undefined;
+  return value.profiles.some((p: ServiceProfile) => p.id === value.activeLlmProfileId && p.role === "llm")
+    && value.profiles.some((p: ServiceProfile) => p.id === voiceId && p.role === (selection.mode === "realtime" ? "realtime" : "tts"))
+    && record(value.radar) && Array.isArray(value.radar.enabledSources) && value.radar.enabledSources.every((source: unknown) => typeof source === "string") && typeof value.radar.fetchIntervalMinutes === "number"
+    && record(value.tokenExchange) && typeof value.tokenExchange.baseUrl === "string" && ["auto", "persisted"].includes(String(value.tokenExchange.deviceIdStrategy))
+    && record(value.executionApi) && typeof value.executionApi.baseUrl === "string" && typeof value.executionApi.enabled === "boolean"
+    && value.verification.every((item: unknown) => record(item) && typeof item.profileId === "string" && typeof item.live === "boolean" && typeof item.verifiedAt === "string" && Number.isInteger(item.configRevision) && Number.isInteger(item.credentialRevision));
+}
 export function subscribeProviderProfiles(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
 export function loadProviderProfiles(): ProviderSettingsV2 | null {
   const raw = getStorageSession()?.storage.getMeta(PROFILE_SETTINGS_KEY);
   if (!raw) return null;
   try {
-    const value = JSON.parse(raw) as ProviderSettingsV2;
-    if (value.schemaVersion !== 2 || !Array.isArray(value.profiles) || !Array.isArray(value.verification)) return null;
+    const value: unknown = JSON.parse(raw);
+    if (!validSettings(value)) return null;
     return value;
   } catch { return null; }
 }
 export function saveProviderProfiles(settings: ProviderSettingsV2): void {
   const storage = getStorageSession()?.storage;
   if (!storage) throw new Error("本地存储尚未就绪");
+  if (!validSettings(settings)) throw new Error("服务配置格式不正确，原值未修改");
   storage.setMeta(PROFILE_SETTINGS_KEY, JSON.stringify(settings));
   listeners.forEach((listener) => listener());
 }
@@ -29,7 +55,7 @@ export function profileReadiness(settings: ProviderSettingsV2) {
   const llm = activeProfile(settings, "llm");
   const voice = activeProfile(settings, "voice");
   const llmLive = Boolean(llm && isProfileVerified(llm, settings.verification));
-  const voiceLive = Boolean(voice && isProfileVerified(voice, settings.verification));
+  const voiceLive = Boolean(voice && isProfileVerified(voice, settings.verification) && (settings.voiceSelection.mode === "realtime" || llmLive));
   return { verified: llmLive, llmLive, voiceLive };
 }
 export function updateServiceProfile(profile: ServiceProfile): ProviderSettingsV2 {
@@ -58,9 +84,10 @@ export function recordProfileVerification(profile: ServiceProfile, live: boolean
 // No cross-store transaction exists: copy and verify credentials before activating v2.
 export async function migrateProviderProfiles(credentials: SecureCredentialStore): Promise<ProviderSettingsV2> {
   const existing = loadProviderProfiles();
-  if (existing) return existing;
   const storage = getStorageSession()?.storage;
   if (!storage) throw new Error("本地存储尚未就绪");
+  if (existing) { storage.setMeta(JOURNAL_KEY, JSON.stringify({ phase: "complete" })); return existing; }
+  if (storage.getMeta(PROFILE_SETTINGS_KEY)) throw new Error("服务配置损坏，已保留原值，请修复或恢复备份");
   const raw = storage.getMeta("provider.settings.v1");
   let old: {
     llm?: { endpoint?: string; model?: string; providerId?: string };
@@ -68,7 +95,15 @@ export async function migrateProviderProfiles(credentials: SecureCredentialStore
     radar?: ProviderSettingsV2["radar"]; tokenExchange?: ProviderSettingsV2["tokenExchange"]; executionApi?: ProviderSettingsV2["executionApi"];
   } = {};
   if (raw) {
-    try { old = JSON.parse(raw) as typeof old; }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!record(parsed) || ["llm", "voice", "radar", "tokenExchange", "executionApi"].some((section) => parsed[section] !== undefined && !record(parsed[section]))) throw new Error("Invalid legacy object");
+      for (const section of ["llm", "voice"] as const) {
+        const values = parsed[section];
+        if (record(values) && Object.values(values).some((value) => typeof value !== "string" && value !== undefined)) throw new Error("Invalid legacy provider fields");
+      }
+      old = parsed as typeof old;
+    }
     catch { throw new Error("旧提供商配置损坏，已保留原值，请修复后重试"); }
     if (!storage.getMeta("provider.settings.v1.backup")) storage.setMeta("provider.settings.v1.backup", raw);
   }

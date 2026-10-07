@@ -42,7 +42,7 @@ function resolveRadarFetch(explicit?: RadarFetch): RadarFetch {
     return explicit;
   }
   if (typeof globalThis.fetch === "function") {
-    return providerFetch;
+    return (url, request) => providerFetch(url, { method: request?.method ?? "GET", headers: request?.headers ?? {}, signal: request?.signal });
   }
   return async () => {
     throw new Error("fetch unavailable");

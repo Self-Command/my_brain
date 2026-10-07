@@ -256,7 +256,6 @@ export function CaptureInboxScreen() {
 
       <QuickCaptureFab
         testID="capture-inbox-quick-capture-fab"
-        visualFixture={inboxVisualCapture}
       />
     </View>
   );

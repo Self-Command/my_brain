@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -22,18 +22,11 @@ import {
   loadProviderSettings,
   saveProviderSettings,
   testExecutionApiConnection,
-  testLlmConnection,
   testRadarConnection,
   testTokenExchangeConnection,
-  testVoiceConnection,
-  verifyCompanionProviderGate,
   type ConnectionTestResult,
   type ProviderSettingsConfig,
 } from "../services/providerConfigStore";
-import {
-  getSecureCredentialStore,
-  maskCredentialLast4,
-} from "../services/secureCredentialStore";
 import { validateProviderHttpsUrl } from "../services/providerUrlValidation";
 import { useMobileAppStore } from "../stores/mobileAppStore";
 import { UniversalProviderSettings } from "../components/providers/UniversalProviderSettings";
@@ -44,7 +37,7 @@ import { isVisualFixtureRoute } from "../visual-fixtures/captureSession";
 type BlockId = "llm" | "voice" | "radar" | "tokenExchange" | "executionApi";
 
 export interface ProviderSettingsScreenProps {
-  /** First-launch gate — blocks main route until both live checks pass. */
+  /** First-launch gate — opens text mode after LLM verification. */
   launchGate?: boolean;
 }
 
@@ -73,25 +66,11 @@ function ProviderSettingsScreenInner({
   );
 
   const [settings, setSettings] = useState<ProviderSettingsConfig>(() => loadProviderSettings());
-  const [llmKeyLast4, setLlmKeyLast4] = useState<string | null>(null);
-  const [voiceKeyLast4, setVoiceKeyLast4] = useState<string | null>(null);
-  const [llmKeyDraft, setLlmKeyDraft] = useState("");
-  const [voiceKeyDraft, setVoiceKeyDraft] = useState("");
   const [results, setResults] = useState<Partial<Record<BlockId, ConnectionTestResult>>>({});
-  const [gateMessage, setGateMessage] = useState<string | null>(null);
 
   const providerVerified = useMobileAppStore((s) => s.providerVerified);
-  const applyProviderVerification = useMobileAppStore((s) => s.applyProviderVerification);
 
   const shellEnv = useMemo(() => readMobileAppEnv(), []);
-
-  useEffect(() => {
-    void (async () => {
-      const store = getSecureCredentialStore();
-      setLlmKeyLast4(await store.getLast4("llm_api_key"));
-      setVoiceKeyLast4(await store.getLast4("voice_api_key"));
-    })();
-  }, []);
 
   const syncStoreStatus = useCallback(
     (next: ProviderSettingsConfig, hasLlm: boolean, hasVoice: boolean) => {
@@ -104,72 +83,6 @@ function ProviderSettingsScreenInner({
       useMobileAppStore.setState({ hasApiKey: hasLlm, providerStatus: snapshot });
     },
     [voiceDisconnected],
-  );
-
-  const syncVoiceConnectionResult = useCallback(
-    (result: ConnectionTestResult, hasKey: boolean) => {
-      useMobileAppStore.setState((state) => {
-        const voiceLive = result.status === "live";
-        const llmLive = state.providerLlmLive;
-        const verified = llmLive && voiceLive;
-        return {
-          hasApiKey: hasKey || state.hasApiKey,
-          providerStatus: {
-            ...state.providerStatus,
-            voice:
-              result.status === "live"
-                ? "connected"
-                : result.status === "mock"
-                  ? "mock"
-                  : "disconnected",
-            lastErrorCode: result.status === "live" ? undefined : result.code,
-          },
-          providerVoiceLive: voiceLive,
-          providerVerified: verified,
-          providerLlmLive: llmLive,
-        };
-      });
-      const next = useMobileAppStore.getState();
-      applyProviderVerification({
-        verified: next.providerVerified,
-        llmLive: next.providerLlmLive,
-        voiceLive: next.providerVoiceLive,
-      });
-    },
-    [applyProviderVerification],
-  );
-
-  const syncLlmConnectionResult = useCallback(
-    (result: ConnectionTestResult, hasKey: boolean) => {
-      useMobileAppStore.setState((state) => {
-        const llmLive = result.status === "live";
-        const voiceLive = state.providerVoiceLive;
-        const verified = llmLive && voiceLive;
-        return {
-          hasApiKey: hasKey,
-          providerStatus: {
-            ...state.providerStatus,
-            llm:
-              result.status === "live"
-                ? "live"
-                : result.status === "mock"
-                  ? "mock"
-                  : "degraded",
-            lastErrorCode: result.status === "live" ? undefined : result.code,
-          },
-          providerLlmLive: llmLive,
-          providerVerified: verified,
-          providerVoiceLive: voiceLive,
-        };
-      });
-      const next = useMobileAppStore.getState();
-      applyProviderVerification({
-        verified: next.providerVerified,
-        llmLive: next.providerLlmLive,
-        voiceLive: next.providerVoiceLive,
-      });
-    },
-    [applyProviderVerification],
   );
 
   const persistSettings = useCallback(
@@ -187,64 +100,9 @@ function ProviderSettingsScreenInner({
     [syncStoreStatus],
   );
 
-  const saveLlmKey = useCallback(async () => {
-    if (!llmKeyDraft.trim()) {
-      return;
-    }
-    const store = getSecureCredentialStore();
-    await store.set("llm_api_key", llmKeyDraft.trim());
-    setLlmKeyDraft("");
-    const last4 = await store.getLast4("llm_api_key");
-    setLlmKeyLast4(last4);
-    appendProviderConfigAudit("llm_api_key", "ok", "credential_configured");
-    syncStoreStatus(settings, true, await store.has("voice_api_key"));
-  }, [llmKeyDraft, settings, syncStoreStatus]);
-
-  const saveVoiceKey = useCallback(async () => {
-    if (!voiceKeyDraft.trim()) {
-      return;
-    }
-    const store = getSecureCredentialStore();
-    await store.set("voice_api_key", voiceKeyDraft.trim());
-    setVoiceKeyDraft("");
-    const last4 = await store.getLast4("voice_api_key");
-    setVoiceKeyLast4(last4);
-    appendProviderConfigAudit("voice_api_key", "ok", "credential_configured");
-    syncStoreStatus(settings, await store.has("llm_api_key"), true);
-  }, [voiceKeyDraft, settings, syncStoreStatus]);
-
   const setResult = useCallback((block: BlockId, result: ConnectionTestResult) => {
     setResults((prev) => ({ ...prev, [block]: result }));
   }, []);
-
-  const runLaunchGateVerification = useCallback(async () => {
-    const store = getSecureCredentialStore();
-    const gate = await verifyCompanionProviderGate({
-      settings,
-      llmHasKey: await store.has("llm_api_key"),
-      llmApiKey: await store.get("llm_api_key"),
-      voiceHasKey: await store.has("voice_api_key"),
-      voiceApiKey: await store.get("voice_api_key"),
-      voiceDisconnected,
-    });
-    setResult("llm", gate.llm);
-    setResult("voice", gate.voice);
-    syncLlmConnectionResult(gate.llm, await store.has("llm_api_key"));
-    syncVoiceConnectionResult(gate.voice, await store.has("voice_api_key"));
-    applyProviderVerification(gate.verification);
-    if (gate.verification.verified) {
-      setGateMessage("ModelScope 与豆包语音均已连接，可进入主界面。");
-    } else {
-      setGateMessage("需要 ModelScope 语言模型与豆包语音均检测为已连接，主界面仍锁定。");
-    }
-    return gate;
-  }, [
-    applyProviderVerification,
-    settings,
-    syncLlmConnectionResult,
-    syncVoiceConnectionResult,
-    voiceDisconnected,
-  ]);
 
   const handleBack = useCallback(() => onBack(), [onBack]);
 
@@ -282,11 +140,6 @@ function ProviderSettingsScreenInner({
             <Text style={[styles.bannerText, { color: theme.warning }]}>
               首次启动需验证语言模型。语音单独验证，失败时可以先用文字聊聊。
             </Text>
-            {gateMessage ? (
-              <Text style={[styles.bannerText, { color: theme.textSecondary, marginTop: spacing.xs }]}>
-                {gateMessage}
-              </Text>
-            ) : null}
             {providerVerified ? (
               <Text style={[styles.bannerText, { color: theme.primary, marginTop: spacing.xs }]}>
                 已通过 live 检测 — 主界面已解锁。

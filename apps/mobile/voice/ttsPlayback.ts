@@ -31,6 +31,8 @@ export function createTtsPlayback(profile: ServiceProfile) {
     const key = await getSecureCredentialStore().get(profile.credentialRef);
     if (!key) throw new Error("请先保存 TTS API Key");
     let subscription: { remove(): void } | undefined;
+    let errorSubscription: { remove(): void } | undefined;
+    let pipelineFailed = false;
     let first = true;
     let bytes = 0;
     try {
@@ -41,6 +43,10 @@ export function createTtsPlayback(profile: ServiceProfile) {
       let completed!: () => void;
       const playbackEnded = new Promise<void>((resolve) => { completed = resolve; settle = resolve; });
       subscription = Pipeline.subscribe("PipelinePlaybackStopped", (event) => { if (event.turnId === id && epoch === generation) completed(); });
+      errorSubscription = Pipeline.onError(() => {
+        if (epoch !== generation) return;
+        pipelineFailed = true; active.abort(); completed();
+      });
       setPlaying(true);
       const response = await providerHttpStream(request.url, { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: request.body, signal: active.signal });
       if (response.status < 200 || response.status >= 300) { response.close(); throw new Error(`TTS 请求失败 (${response.status})`); }
@@ -55,7 +61,7 @@ export function createTtsPlayback(profile: ServiceProfile) {
         first = false; bytes += framed.length;
       };
       for await (const chunk of response.chunks) {
-        if (epoch !== generation) return;
+        if (epoch !== generation) throw new Error("语音播放已取消");
         for (const part of request.streamingSse ? sse.push(chunk) : [chunk]) await push(part);
       }
       if (request.streamingSse) for (const part of sse.finish()) await push(part);
@@ -67,6 +73,7 @@ export function createTtsPlayback(profile: ServiceProfile) {
       try {
         await Promise.race([playbackEnded, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("音频播放未完成")), 120_000); })]);
         if (epoch !== generation) throw new Error("语音播放已取消");
+        if (pipelineFailed) throw new Error("设备音频播放失败");
       } finally { if (timer) clearTimeout(timer); }
     } catch (failure) {
       if (epoch === generation) {
@@ -78,6 +85,7 @@ export function createTtsPlayback(profile: ServiceProfile) {
       throw new Error("语音播放已取消");
     } finally {
       subscription?.remove();
+      errorSubscription?.remove();
       if (epoch === generation) { controller = null; settle = null; setPlaying(false); }
     }
   };

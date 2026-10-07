@@ -291,7 +291,7 @@ export const useMobileAppStore = create<MobileAppState>((set, get) => ({
     const state = get();
     const providerStatus: ProviderConfigSnapshot = {
       ...state.providerStatus,
-      llm: verification.llmLive ? "live" : state.providerStatus.llm,
+      llm: verification.llmLive ? "live" : "degraded",
       voice: verification.voiceLive ? "connected" : "disconnected",
     };
     const degraded = degradedAfterVerification(verification, {

@@ -90,6 +90,7 @@ export function createDoubaoDialogVoiceTransport(
   let sessionActive = false;
   let onAudioReady: (() => void) | null = null;
   let onAudioReadyFailed: ((message: string) => void) | null = null;
+  let pendingAsrText = "";
 
   const transcriptListeners = new Set<(transcript: string) => void>();
   const playbackListeners = new Set<(playing: boolean) => void>();
@@ -175,12 +176,13 @@ export function createDoubaoDialogVoiceTransport(
         return;
       case VOLC_SERVER_EVENT.asrResponse: {
         const text = extractAsrText(frame.payloadJson);
-        if (text) {
-          if (__DEV__) {
-            console.log("[doubao-voice] asr", text);
-          }
-          transcriptListeners.forEach((listener) => listener(text));
-        }
+        if (text) pendingAsrText = text;
+        return;
+      }
+      case VOLC_SERVER_EVENT.asrEnded: {
+        const final = extractAsrText(frame.payloadJson) || pendingAsrText;
+        pendingAsrText = "";
+        if (final) transcriptListeners.forEach((listener) => listener(final));
         return;
       }
       case VOLC_SERVER_EVENT.chatResponse:
@@ -224,6 +226,7 @@ export function createDoubaoDialogVoiceTransport(
     connected = false;
     sessionActive = false;
     audioReady = false;
+    pendingAsrText = "";
     onAudioReady = null;
     onAudioReadyFailed = null;
     notifyPlayback(false);

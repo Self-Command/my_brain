@@ -1,4 +1,4 @@
-import { appendCasualTurn, createConfiguredLlmProvider, createOpenAiCompatibleCompletion, hasExplicitSaveIntent, hasRejectMemoryIntent, rejectEphemeralMemory, type EphemeralConversationState, type OpenAiCompatibleMessage } from "@my-brain/core";
+import { appendCasualTurn, createConfiguredLlmProvider, createOpenAiCompatibleCompletion, hasExplicitSaveIntent, hasRejectMemoryIntent, normalizeServiceBaseUrl, rejectEphemeralMemory, type EphemeralConversationState, type OpenAiCompatibleMessage } from "@my-brain/core";
 import { loadProviderSettings } from "./providerConfigStore";
 import { getSecureCredentialStore } from "./secureCredentialStore";
 import { providerFetch } from "./providerHttp";
@@ -15,7 +15,7 @@ export async function completeConfiguredChat(messages: OpenAiCompatibleMessage[]
   const settings = loadProviderSettings().llm;
   const key = await getSecureCredentialStore().get("llm_api_key");
   if (!key || !settings.model.trim() || !settings.endpoint.trim()) throw new Error("请先配置语言模型");
-  const { text } = await createOpenAiCompatibleCompletion({ baseUrl: settings.endpoint, model: settings.model, apiKey: key, fetch: providerFetch }, messages, { signal });
+  const { text } = await createOpenAiCompatibleCompletion({ baseUrl: normalizeServiceBaseUrl(settings.endpoint), model: settings.model.trim(), apiKey: key.trim(), fetch: providerFetch }, messages, { signal });
   return text;
 }
 export function mobileChatMessages(chat: EphemeralConversationState, text: string): OpenAiCompatibleMessage[] {

@@ -54,7 +54,7 @@ function mapFsmToOrbState(
 export interface LivingBrainVoiceOrbOptions {
   enabled: boolean;
   dispatchIntent: (intent: UserIntent) => string | void;
-  dispatchVoiceIntent?: (intent: UserIntent, signal?: AbortSignal) => Promise<string | void>;
+  dispatchVoiceIntent?: (intent: UserIntent, signal?: AbortSignal) => Promise<string | null | void>;
 }
 
 export function useLivingBrainVoiceOrb({ enabled, dispatchIntent, dispatchVoiceIntent }: LivingBrainVoiceOrbOptions) {
@@ -81,7 +81,7 @@ export function useLivingBrainVoiceOrb({ enabled, dispatchIntent, dispatchVoiceI
       skipMicPermissionCheck: !enabled,
       audioIo: getLivingBrainAudioIo(),
       onIntent: (intent) => dispatchIntentRef.current(intent),
-      onAsyncIntent: (intent, signal) => dispatchVoiceIntentRef.current?.(intent, signal) ?? Promise.resolve(dispatchIntentRef.current(intent)),
+      onAsyncIntent: async (intent, signal) => (await (dispatchVoiceIntentRef.current?.(intent, signal) ?? Promise.resolve(dispatchIntentRef.current(intent)))) ?? undefined,
       onFreeformTranscript: replyToVoiceChat,
       isAwaitingConfirmation: () => {
         const conversation = useMobileAppStore.getState().conversation;
@@ -114,7 +114,7 @@ export function useLivingBrainVoiceOrb({ enabled, dispatchIntent, dispatchVoiceI
     setController(session);
     registerActiveVoiceController(session);
     return () => {
-      session.disconnect();
+      session.dispose();
       if (tts) void tts.dispose().catch(() => undefined);
       setController(null);
       registerActiveVoiceController(null);
@@ -146,7 +146,7 @@ export function useLivingBrainVoiceOrb({ enabled, dispatchIntent, dispatchVoiceI
     if (!enabled || !controller) {
       return;
     }
-    if (snapshot.state === "speaking") {
+    if (snapshot.state === "speaking" || snapshot.state === "thinking") {
       controller.bargeIn();
       ingestAttemptRef.current = 1;
       return;

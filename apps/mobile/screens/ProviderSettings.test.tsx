@@ -25,11 +25,12 @@ vi.mock("expo-secure-store", () => ({
   deleteItemAsync: vi.fn(async () => undefined),
 }));
 
+const meta = vi.hoisted(() => new Map<string, string>());
 vi.mock("../storage/storageSession", () => ({
   getStorageSession: vi.fn(() => ({
     storage: {
-      getMeta: vi.fn(() => null),
-      setMeta: vi.fn(),
+      getMeta: vi.fn((key: string) => meta.get(key) ?? null),
+      setMeta: vi.fn((key: string, value: string) => { meta.set(key, value); }),
       appendDiagnosticEvent: vi.fn(),
     },
   })),
@@ -121,18 +122,21 @@ vi.mock("../services/secureCredentialStore", async (importOriginal) => {
   };
 });
 
-function renderProviderSettings() {
-  return render(
+async function renderProviderSettings() {
+  const view = render(
     <ThemeProvider mode="dark">
       <NavigationProvider>
         <ProviderSettingsScreen />
       </NavigationProvider>
     </ThemeProvider>,
   );
+  await screen.findByTestId("universal-provider-settings");
+  return view;
 }
 
 describe("ProviderSettingsScreen (S14)", () => {
   beforeEach(() => {
+    meta.clear();
     resetSecureCredentialStoreForTests();
     useMobileAppStore.setState({
       hasApiKey: false,
@@ -151,26 +155,24 @@ describe("ProviderSettingsScreen (S14)", () => {
 
   afterEach(() => cleanup());
 
-  it("renders provider settings with all connection blocks", () => {
-    renderProviderSettings();
+  it("renders provider settings with all connection blocks", async () => {
+    await renderProviderSettings();
     expect(screen.getByTestId("provider-settings-screen")).toBeTruthy();
-    expect(screen.getByTestId("provider-row-llm")).toBeTruthy();
-    expect(screen.getByTestId("provider-row-voice")).toBeTruthy();
+    expect(screen.getByTestId("provider-editor-llm")).toBeTruthy();
+    expect(screen.getByTestId("provider-editor-realtime")).toBeTruthy();
     expect(screen.getByTestId("provider-row-radar")).toBeTruthy();
     expect(screen.getByTestId("provider-row-token-exchange")).toBeTruthy();
     expect(screen.getByTestId("provider-row-execution-api")).toBeTruthy();
   });
 
-  it("shows mock mode when LLM test runs without API key", async () => {
-    renderProviderSettings();
+  it("rejects an unconfigured LLM without silently granting mock readiness", async () => {
+    await renderProviderSettings();
     fireEvent.click(screen.getByTestId("test-connection-llm"));
-    await waitFor(() => {
-      expect(screen.getByTestId("provider-row-llm-status").textContent).toContain("演示模式");
-    });
+    await screen.findByText(/保存失败|Invalid URL|公网 HTTPS/);
+    expect(useMobileAppStore.getState().providerLlmLive).toBe(false);
   });
-
   it("shows error code on token exchange http URL — not connected", async () => {
-    renderProviderSettings();
+    await renderProviderSettings();
     fireEvent.change(screen.getByTestId("provider-token-exchange-url"), {
       target: { value: "http://evil.example/token" },
     });
@@ -184,11 +186,13 @@ describe("ProviderSettingsScreen (S14)", () => {
   });
 
   it("masks API key as last4 only after save", async () => {
-    renderProviderSettings();
+    await renderProviderSettings();
+    fireEvent.change(screen.getByTestId("provider-llm-endpoint"), { target: { value: "https://example.com/v1" } });
+    fireEvent.change(screen.getByTestId("provider-llm-model"), { target: { value: "manual-model" } });
     fireEvent.change(screen.getByTestId("provider-llm-key-input"), {
       target: { value: "sk-test-key-ab12" },
     });
-    fireEvent.click(screen.getByTestId("provider-llm-key-save"));
+    fireEvent.click(screen.getByTestId("provider-llm-save"));
     await waitFor(() => {
       expect(screen.getByTestId("provider-llm-key-mask").textContent).toContain("••••ab12");
       expect(screen.getByTestId("provider-llm-key-mask").textContent).not.toContain("sk-test");
@@ -196,11 +200,13 @@ describe("ProviderSettingsScreen (S14)", () => {
   });
 
   it("does not mark LLM live immediately after saving an untested key", async () => {
-    renderProviderSettings();
+    await renderProviderSettings();
+    fireEvent.change(screen.getByTestId("provider-llm-endpoint"), { target: { value: "https://example.com/v1" } });
+    fireEvent.change(screen.getByTestId("provider-llm-model"), { target: { value: "manual-model" } });
     fireEvent.change(screen.getByTestId("provider-llm-key-input"), {
       target: { value: "sk-untested-key-ab12" },
     });
-    fireEvent.click(screen.getByTestId("provider-llm-key-save"));
+    fireEvent.click(screen.getByTestId("provider-llm-save"));
     await waitFor(() => {
       expect(useMobileAppStore.getState().providerStatus.llm).toBe("degraded");
       expect(useMobileAppStore.getState().providerStatus.llm).not.toBe("live");
@@ -208,39 +214,39 @@ describe("ProviderSettingsScreen (S14)", () => {
   });
 
   it("masks voice key as last4 only after save", async () => {
-    renderProviderSettings();
-    fireEvent.change(screen.getByTestId("provider-voice-key-input"), {
+    await renderProviderSettings();
+    fireEvent.change(screen.getByTestId("provider-realtime-key-input"), {
       target: { value: "voice-secret-5678" },
     });
-    fireEvent.click(screen.getByTestId("provider-voice-key-save"));
+    fireEvent.click(screen.getByTestId("provider-realtime-save"));
     await waitFor(() => {
-      expect(screen.getByTestId("provider-voice-key-mask").textContent).toContain("••••5678");
-      expect(screen.getByTestId("provider-voice-key-mask").textContent).not.toContain("voice-secret");
+      expect(screen.getByTestId("provider-realtime-key-mask").textContent).toContain("••••5678");
+      expect(screen.getByTestId("provider-realtime-key-mask").textContent).not.toContain("voice-secret");
     });
   });
 
-  it("shows BYOK note for token exchange section", () => {
-    renderProviderSettings();
+  it("shows BYOK note for token exchange section", async () => {
+    await renderProviderSettings();
     expect(screen.getByTestId("provider-token-exchange-byok-note")).toBeTruthy();
     expect(screen.getByTestId("provider-token-exchange-byok-note").textContent).toMatch(
       /BYOK/,
     );
   });
 
-  it("execution API enabled switch defaults off", () => {
-    renderProviderSettings();
+  it("execution API enabled switch defaults off", async () => {
+    await renderProviderSettings();
     const toggle = screen.getByTestId("provider-execution-api-enabled") as HTMLInputElement;
     expect(toggle.checked).toBe(false);
   });
 
-  it("launch gate mode shows gate banner and verify-all control", () => {
+  it("launch gate mode shows gate banner and separate role verification controls", async () => {
     render(
       <ThemeProvider mode="dark">
         <ProviderSettingsScreen launchGate />
       </ThemeProvider>,
     );
     expect(screen.getByTestId("provider-launch-gate-banner")).toBeTruthy();
-    expect(screen.getByTestId("provider-launch-gate-verify")).toBeTruthy();
+    expect(await screen.findByTestId("test-connection-llm")).toBeTruthy();
     expect(screen.queryByTestId("provider-settings-back")).toBeNull();
   });
 });

@@ -102,6 +102,7 @@ export interface VoiceSessionController {
   subscribe: (cb: () => void) => () => void;
   connect: () => Promise<void>;
   disconnect: () => void;
+  dispose: () => void;
   handleTranscript: (transcript: string, attempt: 1 | 2) => UserIntent | "reprompt" | null;
   simulateAssistantSpeak: (chunkCount?: number, durationMsPerChunk?: number) => void;
   bargeIn: () => void;
@@ -143,6 +144,8 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
   const cancelReply = () => { replyEpoch++; replyAbort?.abort(); replyAbort = null; };
   let snapshot = createInitialVoiceSnapshot();
   let connected = false;
+  let connectionEpoch = 0;
+  const assertConnection = (epoch: number) => { if (epoch !== connectionEpoch) throw new Error("语音连接已取消"); };
   let activeTransport: VoiceRealtimeTransport | null = null;
   let hasVoiceKey = false;
   let ingestAttempt: 1 | 2 = 1;
@@ -204,7 +207,7 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
     }
   };
 
-  playback.onPlaybackStateChange((playing) => {
+  const playbackStateUnsub = playback.onPlaybackStateChange((playing) => {
     if (playing) {
       if (!composed) void stopDeviceListening();
       return;
@@ -218,11 +221,11 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
     }
   });
 
-  audioInterrupt.subscribe(() => {
+  const audioInterruptUnsub = audioInterrupt.subscribe(() => {
     if (composed && audioInterrupt.shouldPauseTts()) { cancelReply(); playback.interruptPlayback(); }
     pausePlaybackIfNeeded();
   });
-  playback.onError?.((message) => { cancelReply(); applyEvent({ type: "transport_error", message }); deps.onDegradedVoice?.("transport"); notify(); });
+  const playbackErrorUnsub = playback.onError?.((message) => { cancelReply(); applyEvent({ type: "transport_error", message }); deps.onDegradedVoice?.("transport"); notify(); });
 
   const enqueueAssistantReply = (reply: string) => {
     if (audioInterrupt.shouldPauseTts()) {
@@ -348,11 +351,6 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
     });
     tokenRefreshScheduler.schedule(token.expiresAt, async () => {
       try {
-        if (composed) {
-          if (!hasVoiceKey) throw new Error("TTS 凭据未配置");
-          connected = true; usesDeviceStt = true; usesDoubaoS2S = false;
-          await startDeviceListening(); applyEvent({ type: "start_listening" }); deps.onClearDegradedVoice?.(); notify(); return;
-        }
         await storeTokenAndScheduleRefresh();
         deps.onClearDegradedVoice?.();
       } catch {
@@ -365,15 +363,16 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
     return token;
   };
 
-  const connectMockTransport = async () => {
+  const connectMockTransport = async (epoch: number) => {
     const transport = deps.voiceTransport ?? createMockRealtimeVoiceTransport();
+    activeTransport = transport;
     await transport.connect({
       url: "mock://voice",
       protocols: [],
       providerId: "mock",
       model: "mock-voice",
     });
-    activeTransport = transport;
+    assertConnection(epoch);
     connected = true;
     ingestAttempt = 1;
     wireTransportTranscripts();
@@ -382,15 +381,16 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
     notify();
   };
 
-  const connectByokTransport = async (apiKey: string) => {
+  const connectByokTransport = async (apiKey: string, epoch: number) => {
     const settings = resolveVoiceSettings(deps);
     const transport =
       deps.voiceTransport?.kind === "byok_live"
         ? deps.voiceTransport
         : createByokRealtimeVoiceTransport(deps.transportOptions);
     const request = buildRealtimeConnectionRequest(settings, apiKey);
-    await transport.connect(request);
     activeTransport = transport;
+    await transport.connect(request);
+    assertConnection(epoch);
     connected = true;
     ingestAttempt = 1;
     wireTransportTranscripts();
@@ -399,7 +399,7 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
     notify();
   };
 
-  const connectDoubaoTransport = async (accessToken: string) => {
+  const connectDoubaoTransport = async (accessToken: string, epoch: number) => {
     const settings = resolveVoiceSettings(deps);
     const appId = settings.appId?.trim();
     if (!appId) {
@@ -415,13 +415,14 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
               dialogModel: resolveDoubaoDialogModel(settings.voiceModel),
             },
           );
+    activeTransport = transport;
     await transport.connect({
       url: "wss://doubao-volc",
       protocols: [],
       providerId: settings.providerId,
       model: settings.voiceModel.trim() || "doubao-realtime",
     });
-    activeTransport = transport;
+    assertConnection(epoch);
     connected = true;
     usesDeviceStt = false;
     usesDoubaoS2S = true;
@@ -469,8 +470,11 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
       return resolveVoiceTransportKind(hasVoiceKey, settings.providerId, connected);
     },
     async connect() {
+      if (connected) return;
+      const epoch = ++connectionEpoch;
       if (!deps.skipMicPermissionCheck) {
         const micStatus = await micPermission.request();
+        assertConnection(epoch);
         if (micStatus === "denied") {
           connected = false;
           applyEvent({ type: "transport_error", message: "microphone permission denied" });
@@ -482,6 +486,7 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
 
       const voiceSettings = resolveVoiceSettings(deps);
       const apiKey = await credentialStore.get("voice_api_key");
+      assertConnection(epoch);
       hasVoiceKey = Boolean(apiKey?.trim());
       const isDoubaoProvider =
         voiceSettings.providerId === "doubao-volc" ||
@@ -496,11 +501,17 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
         (deps.preferTokenBff !== false && !hasByok && Boolean(env.tokenExchangeUrl));
 
       try {
+        if (composed) {
+          if (!hasVoiceKey) throw new Error("TTS 凭据未配置");
+          connected = true; usesDeviceStt = true; usesDoubaoS2S = false;
+          await startDeviceListening(); assertConnection(epoch);
+          ingestAttempt = 1; applyEvent({ type: "start_listening" }); deps.onClearDegradedVoice?.(); notify(); return;
+        }
         if (hasByok) {
           if (isDoubaoProvider) {
-            await connectDoubaoTransport(apiKey!.trim());
+            await connectDoubaoTransport(apiKey!.trim(), epoch);
           } else {
-            await connectByokTransport(apiKey!.trim());
+            await connectByokTransport(apiKey!.trim(), epoch);
           }
           return;
         }
@@ -510,9 +521,12 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
           return;
         }
 
-        await connectMockTransport();
+        if (voiceSettings.providerId !== "mock") throw new Error("所选实时服务未配置有效凭据");
+        await connectMockTransport(epoch);
       } catch (e) {
+        if (epoch !== connectionEpoch) throw e;
         connected = false;
+        void stopDeviceListening();
         activeTransport?.disconnect();
         activeTransport = null;
         tokenRefreshScheduler.clear();
@@ -533,6 +547,7 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
       }
     },
     disconnect() {
+      connectionEpoch++;
       cancelReply();
       connected = false;
       hasVoiceKey = false;
@@ -550,6 +565,9 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
       playback.interruptPlayback();
       applyEvent({ type: "reset" });
       notify();
+    },
+    dispose() {
+      this.disconnect(); playbackStateUnsub(); audioInterruptUnsub(); playbackErrorUnsub?.(); listeners.clear();
     },
     handleTranscript(transcript: string, attempt: 1 | 2) {
       return handleTranscriptInternal(transcript, attempt);
@@ -571,7 +589,7 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
       notify();
     },
     bargeIn() {
-      if (snapshot.state !== "speaking") {
+      if (snapshot.state !== "speaking" && snapshot.state !== "thinking") {
         return;
       }
       cancelReply(); activeTransport?.bargeInPlayback?.();
@@ -606,6 +624,7 @@ export function getVoiceSessionSingleton(deps: VoiceSessionDeps): VoiceSessionCo
 }
 
 export function resetVoiceSessionSingleton(): void {
+  sharedController?.dispose();
   sharedController = null;
 }
 
