@@ -25,6 +25,8 @@ identity = re.search(r"package: name='([^']+)' versionCode='(\d+)' versionName='
 previous = re.search(r"package: name='([^']+)' versionCode='(\d+)'", baseline_package)
 assert identity.group(1) == previous.group(1) == "app.mybrain.personal"
 assert int(identity.group(2)) > int(previous.group(2)), "Version must increase"
+manifest = tool("aapt", "dump", "xmltree", apk, "AndroidManifest.xml")
+assert "android.speech.RecognitionService" in manifest, "Missing Android 11+ recognition service visibility"
 with zipfile.ZipFile(apk) as archive:
     bundle = archive.read("assets/index.android.bundle")
     assert len(bundle) > 100_000, "Missing embedded production JS"
@@ -52,5 +54,5 @@ pathlib.Path("apk-verification.json").write_text(json.dumps({
     "sha": os.environ["GITHUB_SHA"], "applicationId": identity.group(1),
     "versionCode": int(identity.group(2)), "versionName": identity.group(3),
     "sameSigningCertificate": True, "certificateSha256": digest,
-    "embeddedJavaScript": "PASS", "sensitiveValueScan": "PASS", "apkSha256": sha,
+    "embeddedJavaScript": "PASS", "sensitiveValueScan": "PASS", "speechRecognitionServiceVisibility": "PASS", "apkSha256": sha,
 }, indent=2))

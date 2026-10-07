@@ -21,6 +21,8 @@
 
 React Native 0.76 的标准 fetch 无可靠的 Android 流式正文读取；新增的小型 Expo 本地模块只包装 HttpURLConnection，不包含服务商 SDK、录音存储或业务逻辑。播放器继续使用既有 `@edkimmel/expo-audio-stream`，没有复制来源项目的 AudioTrack 或会话引擎。真实设备听感单列未验收。
 
+Android 11+ 的识别服务可见性声明已加入 Manifest，并在 APK 中检查；识别轮次在最终结果或错误后重启，避免 onSpeechEnd 提前开启新轮丢掉最终转写。依据 [Android SpeechRecognizer 官方约束](https://developer.android.com/reference/android/speech/SpeechRecognizer)。
+
 ## 配置方式
 
 1. 在提供商设置填写语言模型的公网 HTTPS Base URL、Key 和模型 ID。地址允许保留自定义路径前缀；例如 `https://example.com/proxy/v1`。点击“保存配置与 Key”后自动获取支持的 `/models` 目录，可搜索选择，也可一直手填。

@@ -22,6 +22,7 @@ export async function startDeviceStt(onTranscript: (text: string) => void, onSpe
     if (text) {
       onTranscript(text);
     }
+    restart();
   };
   Voice.onSpeechStart = () => { if (active && epoch === generation) onSpeechActivity?.(); };
   Voice.onSpeechPartialResults = (event: SpeechResultsEvent) => { if (active && epoch === generation) onSpeechActivity?.(event.value?.[0]); };
@@ -32,9 +33,8 @@ export async function startDeviceStt(onTranscript: (text: string) => void, onSpe
       if (epoch !== generation) await stopNativeStt();
     }).catch(() => undefined);
   };
-  Voice.onSpeechEnd = () => {
-    restart();
-  };
+  // Android requires waiting for final results/error before restarting recognition.
+  Voice.onSpeechEnd = () => {};
   Voice.onSpeechError = () => {
     restart();
   };

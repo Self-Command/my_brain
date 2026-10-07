@@ -3,6 +3,16 @@ import Voice from "@react-native-voice/voice";
 import { startDeviceStt, stopDeviceStt } from "./deviceSpeechInput";
 afterEach(async () => { await stopDeviceStt(); vi.restoreAllMocks(); });
 describe("device recognition boundaries", () => {
+  it("waits for final results before starting the next recognition round", async () => {
+    const start = vi.spyOn(Voice, "start"); const transcript = vi.fn();
+    await startDeviceStt(transcript);
+    Voice.onSpeechEnd?.({});
+    await Promise.resolve();
+    expect(start).toHaveBeenCalledTimes(1);
+    Voice.onSpeechResults?.({ value: ["final text"] });
+    await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(2));
+    expect(transcript).toHaveBeenCalledWith("final text");
+  });
   it("uses partial activity only for interruption and dispatches final transcription once", async () => {
     const transcript = vi.fn(); const activity = vi.fn();
     await startDeviceStt(transcript, activity);
