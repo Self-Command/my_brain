@@ -47,7 +47,7 @@ describe("doubaoVoiceConnectionTest", () => {
   it("requires configured credentials", async () => {
     const result = await testDoubaoVoiceConnection({ appId: "", accessToken: "" });
     expect(result.status).toBe("error");
-    expect(result.errorCode).toBe("MISSING_API_KEY");
+    expect("errorCode" in result && result.errorCode).toBe("MISSING_API_KEY");
   });
 
   it("requires injectable WebSocket for live handshake", async () => {
@@ -56,7 +56,7 @@ describe("doubaoVoiceConnectionTest", () => {
       accessToken: "access-token",
     });
     expect(result.status).toBe("error");
-    expect(result.errorCode).toBe("NATIVE_TRANSPORT_REQUIRED");
+    expect("errorCode" in result && result.errorCode).toBe("NATIVE_TRANSPORT_REQUIRED");
   });
 
   it("maps connectionStarted frame to connected", async () => {

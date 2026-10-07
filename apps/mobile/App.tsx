@@ -56,6 +56,8 @@ import { seedCompanionCredentialsFromEnvIfNeeded } from "./boot/seedCompanionCre
 import { selectMainRouteEnabledFromStore, useMobileAppStore } from "./stores/mobileAppStore";
 import { useProvisionalStore } from "./stores/provisionalStore";
 import { loadProviderVerification } from "./services/providerConfigStore";
+import { migrateProviderProfiles, subscribeProviderProfiles } from "./services/providerProfiles";
+import { getSecureCredentialStore } from "./services/secureCredentialStore";
 import { getStorageSession } from "./storage/storageSession";
 import { resolveThemeMode } from "./theme/appearancePreference";
 import { CONTEXT_DECISION_PAGE_COPY } from "./theme/contextDecisionLabels";
@@ -747,6 +749,8 @@ function AppShell() {
     // Defer provider verification so SQLite + store writes cannot block launch timers.
     queueMicrotask(() => {
       void (async () => {
+        try { await migrateProviderProfiles(getSecureCredentialStore()); }
+        catch (failure) { console.warn("provider migration incomplete", failure instanceof Error ? failure.message : "migration error"); }
         if (__DEV__) {
           try {
             await seedCompanionCredentialsFromEnvIfNeeded();
@@ -767,6 +771,10 @@ function AppShell() {
 
 
   const { status, error, schemaVersion, retry } = useStorageBootstrap(onHydrated);
+
+  useEffect(() => subscribeProviderProfiles(() => {
+    useMobileAppStore.getState().applyProviderVerification(loadProviderVerification());
+  }), []);
 
   const { captureRoute: visualFixtureRoute, isResolvingInitialUrl: visualFixtureResolving } =
     useVisualFixtureCaptureRoute(status === "ready");

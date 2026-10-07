@@ -42,7 +42,7 @@ const C = {
 
 function RefAccentLabel({ label, color = C.primary }: { label: string; color?: string }) {
   return (
-    <Text style={[refStyles.accentLabel, { color }]} includeFontPadding={false}>
+    <Text style={[{ includeFontPadding: false }, refStyles.accentLabel, { color }]}>
       {label}
     </Text>
   );
@@ -99,13 +99,12 @@ function RefPill({
       ]}
     >
       <Text
-        style={[
+        style={[{ includeFontPadding: false }, 
           refStyles.pillText,
           muted && !active && refStyles.pillTextMuted,
           active && !accent && refStyles.pillTextActive,
           active && accent && refStyles.pillTextAccentActive,
         ]}
-        includeFontPadding={false}
       >
         {label}
       </Text>
@@ -144,7 +143,7 @@ function RefPrimaryButton({ label, testID, fullWidth = false }: { label: string;
       style={[refStyles.primaryButton, fullWidth && refStyles.primaryButtonFull]}
       testID={testID}
     >
-      <Text style={refStyles.primaryButtonText} includeFontPadding={false}>
+      <Text style={refStyles.primaryButtonText}>
         {label}
       </Text>
     </Pressable>
@@ -181,21 +180,21 @@ function RefNavHeader({
       {showBack ? (
         <View style={refStyles.navRow}>
           <View style={refStyles.backCircle}>
-            <Text style={refStyles.backGlyph} includeFontPadding={false}>
+            <Text style={refStyles.backGlyph}>
               ‹
             </Text>
           </View>
-          <Text style={refStyles.title} includeFontPadding={false}>
+          <Text style={refStyles.title}>
             {title}
           </Text>
         </View>
       ) : (
-        <Text style={refStyles.title} includeFontPadding={false}>
+        <Text style={refStyles.title}>
           {title}
         </Text>
       )}
       {subtitle ? (
-        <Text style={refStyles.subtitle} includeFontPadding={false}>
+        <Text style={refStyles.subtitle}>
           {subtitle}
         </Text>
       ) : null}
@@ -261,13 +260,13 @@ export function ColdStartDialogueFixtureScreen() {
               testID="cold-start-fixture-input"
             />
             <Pressable style={refStyles.sendButton} testID="cold-start-fixture-send">
-              <Text style={refStyles.sendButtonText} includeFontPadding={false}>
+              <Text style={refStyles.sendButtonText}>
                 发送
               </Text>
             </Pressable>
           </View>
           <Pressable style={refStyles.enterButton} testID="cold-start-fixture-enter">
-            <Text style={refStyles.primaryButtonText} includeFontPadding={false}>
+            <Text style={refStyles.primaryButtonText}>
               进入我的大脑
             </Text>
           </Pressable>
@@ -275,28 +274,28 @@ export function ColdStartDialogueFixtureScreen() {
       }
     >
       <RefCard>
-        <Text style={refStyles.bubbleText} includeFontPadding={false}>
+        <Text style={refStyles.bubbleText}>
           你更希望我帮你做什么？{"\n"}随便说，不用选类别。
         </Text>
       </RefCard>
       <View style={refStyles.userWrap}>
         <RefCard style={refStyles.userCard}>
-          <Text style={[refStyles.bubbleText, refStyles.userBubbleText]} includeFontPadding={false}>
+          <Text style={[{ includeFontPadding: false }, refStyles.bubbleText, refStyles.userBubbleText]}>
             我想系统学一下 AI 语音相关的东西，{"\n"}顺便把项目想法记下来。
           </Text>
         </RefCard>
       </View>
       <RefCard>
-        <Text style={refStyles.bubbleText} includeFontPadding={false}>
+        <Text style={refStyles.bubbleText}>
           听起来你是「学习者 + 技术追踪者」向。{"\n"}我会按这个方式陪你，第一颗星会来自你的话。
         </Text>
       </RefCard>
       <RefCard muted style={refStyles.inferenceCard}>
         <RefAccentLabel label="识别结果 · 可纠偏" color={C.learner} />
-        <Text style={refStyles.cardTitle} includeFontPadding={false}>
+        <Text style={refStyles.cardTitle}>
           学习者 + 技术追踪者 · 置信 82%
         </Text>
-        <Text style={refStyles.captionSmall} includeFontPadding={false}>
+        <Text style={refStyles.captionSmall}>
           进入首页后可在「我的画像」里修正。
         </Text>
       </RefCard>
@@ -318,7 +317,7 @@ export function ProviderSettingsFixtureScreen() {
       <ScrollView showsVerticalScrollIndicator={false} style={refStyles.flexScroll} contentContainerStyle={refStyles.scrollContentTight}>
         <RefCard style={refStyles.warningCard}>
           <RefAccentLabel label="首启门禁 · 未连通前不进入冷启动" color={C.warning} />
-          <Text style={refStyles.captionSmall} includeFontPadding={false}>
+          <Text style={refStyles.captionSmall}>
             本机直连豆包；Key 只存本机。
           </Text>
         </RefCard>
@@ -337,16 +336,16 @@ export function ProviderSettingsFixtureScreen() {
         />
         <RefCard>
           <RefAccentLabel label="连接检测" color={C.success} />
-          <Text style={refStyles.captionSmall} includeFontPadding={false}>
+          <Text style={refStyles.captionSmall}>
             LLM 与语音都通过后，才开始真实冷启动。
           </Text>
-          <Text style={refStyles.captionSmall} includeFontPadding={false}>
+          <Text style={refStyles.captionSmall}>
             上次测试：未执行 · 请先验证
           </Text>
         </RefCard>
         <RefCard muted>
           <RefAccentLabel label="当前范围" color={C.tertiary} />
-          <Text style={refStyles.captionSmall} includeFontPadding={false}>
+          <Text style={refStyles.captionSmall}>
             个人自用，直接配置 Key；失败就停在这里。
           </Text>
         </RefCard>
@@ -378,7 +377,7 @@ function ProviderBlock({
         placeholderTextColor={C.tertiary}
       />
       <View style={refStyles.hintTestRow}>
-        <Text style={refStyles.hintTestLabel} includeFontPadding={false}>
+        <Text style={refStyles.hintTestLabel}>
           {hint}
         </Text>
         <RefPill label="测试连接" active={active} size="small" width={110} />
@@ -421,20 +420,20 @@ export function VoiceSessionFixtureScreen() {
           ))}
         </View>
       </View>
-      <Text style={refStyles.hero} includeFontPadding={false}>
+      <Text style={refStyles.hero}>
         正在听你说
       </Text>
-      <Text style={refStyles.heroBody} includeFontPadding={false}>
+      <Text style={refStyles.heroBody}>
         插话会立即停止播放并重新聆听
       </Text>
       <RefCard>
-        <Text style={refStyles.captionSmall} includeFontPadding={false}>
+        <Text style={refStyles.captionSmall}>
           刚才识别到
         </Text>
-        <Text style={refStyles.cardTitle} includeFontPadding={false}>
+        <Text style={refStyles.cardTitle}>
           「这条先记住，晚点再整理」
         </Text>
-        <Text style={refStyles.captionSmall} includeFontPadding={false}>
+        <Text style={refStyles.captionSmall}>
           意图：入库候选 · 仍需你确认
         </Text>
       </RefCard>
@@ -469,28 +468,28 @@ export function CompanionChatFixtureScreen() {
     >
       <ScrollView showsVerticalScrollIndicator={false} style={refStyles.flexScroll} contentContainerStyle={refStyles.scrollContent}>
       <RefCard>
-        <Text style={refStyles.bubbleText} includeFontPadding={false}>
+        <Text style={refStyles.bubbleText}>
           今天不聊知识也行，我在。
         </Text>
       </RefCard>
       <View style={refStyles.userWrap}>
         <RefCard style={refStyles.userCard}>
-          <Text style={[refStyles.bubbleText, refStyles.userBubbleText]} includeFontPadding={false}>
+          <Text style={[{ includeFontPadding: false }, refStyles.bubbleText, refStyles.userBubbleText]}>
             最近有点焦虑，项目推进得慢。
           </Text>
         </RefCard>
       </View>
       <RefCard>
-        <Text style={refStyles.bubbleText} includeFontPadding={false}>
+        <Text style={refStyles.bubbleText}>
           我听到了。我们可以先把压力拆小一点，也可以只聊聊，不记录任何东西。
         </Text>
       </RefCard>
       <RefCard muted style={refStyles.contextCard}>
         <RefAccentLabel label="短期上下文" color={C.accent} />
-        <Text style={refStyles.cardTitle} includeFontPadding={false}>
+        <Text style={refStyles.cardTitle}>
           本轮只是陪聊，不写入永久图谱
         </Text>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           如果你说「这个记下来」，才会出现资产候选。
         </Text>
       </RefCard>
@@ -521,10 +520,10 @@ export function ProfileReviewFixtureScreen() {
     >
       <RefCard>
         <RefAccentLabel label="主模式" color={C.learner} />
-        <Text style={refStyles.cardTitle} includeFontPadding={false}>
+        <Text style={refStyles.cardTitle}>
           学习者 + 技术追踪者
         </Text>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           置信 82% · 最近纠偏：2 天前
         </Text>
       </RefCard>
@@ -533,10 +532,10 @@ export function ProfileReviewFixtureScreen() {
           <View style={refStyles.traitRow}>
             <View style={[refStyles.accentBar, { backgroundColor: trait.accent }]} />
             <View style={refStyles.traitBody}>
-              <Text style={refStyles.cardTitle} includeFontPadding={false}>
+              <Text style={refStyles.cardTitle}>
                 {trait.title}
               </Text>
-              <Text style={refStyles.caption} includeFontPadding={false}>
+              <Text style={refStyles.caption}>
                 来源：{trait.source}
               </Text>
             </View>
@@ -546,18 +545,18 @@ export function ProfileReviewFixtureScreen() {
       ))}
       <RefCard>
         <RefAccentLabel label="纠偏历史" color={C.tertiary} />
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           已隐藏「偶尔记录生活想法」
         </Text>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           已手动修正「偏好系统学习 + 项目实践」
         </Text>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           已恢复「关注 AI / 开源趋势」
         </Text>
       </RefCard>
       <RefPrimaryButton label="保存并刷新 Today" testID="profile-review-save" />
-      <Text style={refStyles.footer} includeFontPadding={false}>
+      <Text style={refStyles.footer}>
         画像静默生长，但你永远可以查看和改
       </Text>
     </RefScaffold>
@@ -589,7 +588,7 @@ export function WorldObserverFixtureScreen() {
       body: signal.whyUsefulToUser,
       color: ui.color,
       action: ui.action,
-      active: ui.active,
+      active: "active" in ui && ui.active,
     };
   });
   return (
@@ -615,10 +614,10 @@ export function WorldObserverFixtureScreen() {
       {items.map((item) => (
         <RefCard key={item.title} style={refStyles.worldItemCard}>
           <RefAccentLabel label={item.label} color={item.color} />
-          <Text style={refStyles.cardTitle} includeFontPadding={false}>
+          <Text style={refStyles.cardTitle}>
             {item.title}
           </Text>
-          <Text style={refStyles.caption} includeFontPadding={false}>
+          <Text style={refStyles.caption}>
             {item.body}
           </Text>
           <View style={refStyles.cardPillEnd}>
@@ -630,10 +629,10 @@ export function WorldObserverFixtureScreen() {
       ))}
       <RefCard muted>
         <RefAccentLabel label="为什么不是固定 Top3" color={C.primary} />
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           候选由画像、项目、反复问题共同排序。
         </Text>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           没有用户画像时，本页不会出现。
         </Text>
       </RefCard>
@@ -658,20 +657,20 @@ export function PersonalObserverFixtureScreen() {
       {signals.map((signal) => (
         <RefCard key={signal.title}>
           <RefAccentLabel label={signal.label} color={signal.color} />
-          <Text style={refStyles.cardTitle} includeFontPadding={false}>
+          <Text style={refStyles.cardTitle}>
             {signal.title}
           </Text>
-          <Text style={refStyles.caption} includeFontPadding={false}>
+          <Text style={refStyles.caption}>
             {signal.body}
           </Text>
         </RefCard>
       ))}
       <RefCard muted style={refStyles.profileCandidateCard}>
         <RefAccentLabel label="可纠偏的画像候选" color={C.primary} />
-        <Text style={refStyles.cardTitle} includeFontPadding={false}>
+        <Text style={refStyles.cardTitle}>
           偏好：先听我把话说完，再给建议
         </Text>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           来源：最近 2 次闲聊；未确认前不写长期画像。
         </Text>
         <View style={refStyles.pillRowCenter}>
@@ -680,7 +679,7 @@ export function PersonalObserverFixtureScreen() {
           <RefPill label="以后再说" size="profile" width={92} />
         </View>
       </RefCard>
-      <Text style={refStyles.footer} includeFontPadding={false}>
+      <Text style={refStyles.footer}>
         用户手动纠偏优先于所有推断
       </Text>
     </RefScaffold>
@@ -710,36 +709,36 @@ export function AssetCandidateFixtureScreen() {
       <ScrollView showsVerticalScrollIndicator={false} style={refStyles.flexScroll} contentContainerStyle={refStyles.scrollContent}>
       <RefCard>
         <RefAccentLabel label="候选类型 · Project" color={C.primary} />
-        <Text style={refStyles.heroAsset} includeFontPadding={false}>
+        <Text style={refStyles.heroAsset}>
           陪伴型知识 OS
         </Text>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           来自刚才聊天：你决定把主线从雷达 App 调整为长期陪伴 OS。
         </Text>
       </RefCard>
       <RefCard muted>
         <RefAccentLabel label="建议关系" color={C.warning} />
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           relates_to：豆包语音接入
         </Text>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           explains：闲聊不入库边界
         </Text>
       </RefCard>
       <RefCard>
         <RefAccentLabel label="整理动作 · 入库后才执行" color={C.success} />
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           自动 link 到 VoiceProvider、ColdStartProfile。
         </Text>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           生成 history，可一键 undo。
         </Text>
       </RefCard>
       <RefCard style={refStyles.warningCard}>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           不会保存原始闲聊全文；只保存你确认的资产摘要。
         </Text>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           如果你点「不要」，候选会消失。
         </Text>
       </RefCard>
@@ -758,40 +757,40 @@ export function ReviewActionFixtureScreen() {
     >
       <RefCard>
         <RefAccentLabel label="Weekly Brain Review" color={C.primary} />
-        <Text style={refStyles.cardTitle} includeFontPadding={false}>
+        <Text style={refStyles.cardTitle}>
           你这周真正推进的是「陪伴型 OS」
         </Text>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           新增 5 个概念、2 个项目决策、1 个反复问题。
         </Text>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           薄弱点：真实冷启动画像还没有闭环。
         </Text>
       </RefCard>
       <RefCard>
         <RefAccentLabel label="Learning Coach" color={C.learner} />
-        <Text style={refStyles.cardTitle} includeFontPadding={false}>
+        <Text style={refStyles.cardTitle}>
           要不要我考你 3 个问题？
         </Text>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           围绕 VoiceProvider、入库门控、画像纠偏。
         </Text>
       </RefCard>
       <RefCard>
         <RefAccentLabel label="Project Mode" color={C.success} />
-        <Text style={refStyles.cardTitle} includeFontPadding={false}>
+        <Text style={refStyles.cardTitle}>
           下一步建议：先做首启门禁
         </Text>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           引用：Provider Setup、ColdStartProfile。
         </Text>
       </RefCard>
       <RefCard muted>
         <RefAccentLabel label="草稿边界" color={C.warning} />
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           可以生成 issue / README / 博客草稿。
         </Text>
-        <Text style={refStyles.caption} includeFontPadding={false}>
+        <Text style={refStyles.caption}>
           不会自动发布，也不会自动创建 GitHub issue。
         </Text>
       </RefCard>

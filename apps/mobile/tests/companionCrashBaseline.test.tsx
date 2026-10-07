@@ -84,8 +84,17 @@ vi.mock("expo-secure-store", () => ({
   deleteItemAsync: vi.fn(async () => undefined),
 }));
 
+const providerMeta = vi.hoisted(() => new Map<string, string>());
 vi.mock("../storage/storageSession", () => ({
-  getStorageSession: () => null,
+  getStorageSession: () => ({ storage: {
+    getMeta: (key: string) => providerMeta.get(key) ?? null,
+    setMeta: (key: string, value: string) => { providerMeta.set(key, value); },
+    deleteMeta: (key: string) => { providerMeta.delete(key); },
+    appendDiagnosticEvent: vi.fn(),
+    saveGraphSnapshot: vi.fn(), saveHistoryEntry: vi.fn(), saveUserModeProfile: vi.fn(),
+    saveCorrectionState: vi.fn(), saveProvisionalCandidates: vi.fn(), saveAdaptiveSignals: vi.fn(),
+    saveLearningTraces: vi.fn(), savePendingIngestProposal: vi.fn(), saveProviderConfig: vi.fn(),
+  } }),
 }));
 
 vi.mock("../services/secureCredentialStore", async (importOriginal) => {
@@ -630,8 +639,9 @@ describe("CK-03 companion crash baseline", () => {
 
     it("crash_smoke_provider_test_voice_network_fail", async () => {
       renderWithNav(<ProviderSettingsScreen />);
+      await screen.findByTestId("test-connection-realtime");
       const rejections = await collectUnhandledRejections(() => {
-        pressWithoutThrow(() => fireEvent.click(screen.getByTestId("test-connection-voice")));
+        pressWithoutThrow(() => fireEvent.click(screen.getByTestId("test-connection-realtime")));
       });
       await waitFor(() => {
         expect(screen.getByTestId("provider-settings-screen")).toBeTruthy();

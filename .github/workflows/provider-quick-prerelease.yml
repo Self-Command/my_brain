@@ -1,0 +1,63 @@
+name: Publish Provider Test APK
+on:
+  push:
+    branches: ['codex/provider-config-port']
+    paths: ['.github/workflows/provider-quick-prerelease.yml']
+  workflow_dispatch:
+    inputs:
+      artifact_run:
+        description: Run with a passing provider gate and verified APK
+        type: string
+        default: '37565100321'
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: provider-quick-prerelease
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: apk-release
+          run-id: ${{ inputs.artifact_run || '37565100321' }}
+          github-token: ${{ github.token }}
+      - name: Require verified APK and matching code checks
+        run: |
+          node <<'JS'
+          const fs=require('fs');
+          const validation=JSON.parse(fs.readFileSync('apk-release/provider-verification.json'));
+          const apk=JSON.parse(fs.readFileSync('apk-release/apk-verification.json'));
+          const scan=JSON.parse(fs.readFileSync('apk-release/sensitive-scan.json'));
+          if(validation.status!=='PASS'||validation.sha!==apk.sha||!apk.sameSigningCertificate||apk.embeddedJavaScript!=='PASS'||apk.sensitiveValueScan!=='PASS'||scan.findings.length) throw Error('Unverified APK');
+          fs.appendFileSync(process.env.GITHUB_ENV,`APK_SOURCE_SHA=${apk.sha}\nAPK_VERSION=${apk.versionName}\n`);
+          fs.writeFileSync('apk-release/interaction-verification.json',JSON.stringify({sha:apk.sha,status:'NOT_REQUIRED_FOR_THIS_TEST_RELEASE',reason:'2026-10-07 user requested immediate prerelease and will test interaction personally',microphone:'NOT_RUN',acousticP50:'NOT_RUN',bluetooth:'NOT_RUN',phoneCall:'NOT_RUN',ios:'NOT_TESTED'},null,2));
+          JS
+          (cd apk-release && sha256sum -c my-brain-android.apk.sha256)
+      - name: Publish immediately for user testing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          TAG="provider-config-test-${APK_VERSION}-${GITHUB_RUN_ID}"
+          cat > release-notes.md <<EOF
+          通用 LLM / TTS 配置测试版，按用户要求先发布供自行测试。
+
+          - OpenAI 兼容 LLM：自定义地址、Key、模型目录、搜索与手填。
+          - 独立 OpenAI Speech / MiMo PCM TTS；音色可手填，豆包实时配置保留。
+          - 原应用 ID 和签名保留，版本码已递增，可直接覆盖安装，无需卸载。
+          - 移动端/共享核心 857 用例通过，2 个原有跳过；类型、lint、边界检查、APK 编译、签名、内嵌 JS 和敏感值扫描通过。
+          - 完整仓库一项相同的旧 Web 日期断言失败已公开；本次无新增失败。
+          - 用户已取消本次交互验收门槛，交互由用户试用反馈。真实麦克风、回声、蓝牙、来电、声学打断时延及 iOS 未验收。
+          - 真实账号权限需应用内验证；首批 TTS 支持 PCM16LE 单声道 24 kHz，其他协议需扩展适配器。
+
+          源码提交：${APK_SOURCE_SHA}
+          构建与代码检查：https://github.com/${GITHUB_REPOSITORY}/actions/runs/${{ inputs.artifact_run || '37565100321' }}
+          发布 Actions：https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          EOF
+          gh release create "$TAG" apk-release/* --target "$APK_SOURCE_SHA" --title "通用 LLM / TTS 测试版 ${APK_VERSION}" --notes-file release-notes.md --prerelease --latest=false
+          echo "下载：https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}" >> "$GITHUB_STEP_SUMMARY"

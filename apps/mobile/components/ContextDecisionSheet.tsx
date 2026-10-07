@@ -77,8 +77,8 @@ export function ContextDecisionSheet({
 
           {sourceLabel ? (
             <Text
-              includeFontPadding={!captureInline}
-              style={[styles.sourceLabel, captureInline && styles.sourceLabelCapture, { color: theme.accent }]}
+              
+              style={[{ includeFontPadding: !captureInline },styles.sourceLabel, captureInline && styles.sourceLabelCapture, { color: theme.accent }]}
               testID={`${testID}-source-label`}
             >
               {sourceLabel}
@@ -86,8 +86,8 @@ export function ContextDecisionSheet({
           ) : null}
 
           <Text
-            includeFontPadding={!captureInline}
-            style={[
+            
+            style={[{ includeFontPadding: !captureInline },
               styles.title,
               captureInline && styles.titleCapture,
               { color: theme.text },
@@ -98,8 +98,8 @@ export function ContextDecisionSheet({
           </Text>
 
           <Text
-            includeFontPadding={!captureInline}
-            style={[
+            
+            style={[{ includeFontPadding: !captureInline },
               styles.disclaimer,
               captureInline && styles.disclaimerCapture,
               { color: theme.textSecondary },
@@ -118,14 +118,14 @@ export function ContextDecisionSheet({
             testID={`${testID}-evidence`}
           >
             <Text
-              includeFontPadding={!captureInline}
-              style={[styles.evidenceHeading, captureInline && styles.evidenceHeadingCapture, { color: theme.textSecondary }]}
+              
+              style={[{ includeFontPadding: !captureInline },styles.evidenceHeading, captureInline && styles.evidenceHeadingCapture, { color: theme.textSecondary }]}
             >
               {CONTEXT_DECISION_PAGE_COPY.evidenceHeading}
             </Text>
             <Text
-              includeFontPadding={!captureInline}
-              style={[styles.evidenceBody, captureInline && styles.evidenceBodyCapture, { color: theme.textSecondary }]}
+              
+              style={[{ includeFontPadding: !captureInline },styles.evidenceBody, captureInline && styles.evidenceBodyCapture, { color: theme.textSecondary }]}
             >
               {whyRecommended}
             </Text>
@@ -163,8 +163,8 @@ export function ContextDecisionSheet({
           </View>
 
           <Text
-            includeFontPadding={!captureInline}
-            style={[
+            
+            style={[{ includeFontPadding: !captureInline },
               styles.footer,
               captureInline && styles.footerCapture,
               { color: theme.textTertiary },
@@ -251,8 +251,8 @@ function SheetAction({
       accessibilityLabel={label}
     >
       <Text
-        includeFontPadding={!inlineCapture}
-        style={[
+        
+        style={[{ includeFontPadding: !inlineCapture },
           styles.actionText,
           {
             color: isPrimary ? theme.accent : isDetail ? theme.primary : theme.textSecondary,

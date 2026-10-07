@@ -1,0 +1,73 @@
+appId: app.mybrain.personal
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: provider-llm-endpoint
+    timeout: 60000
+- assertVisible: https://example.com/proxy/v1
+- scrollUntilVisible:
+    element:
+      id: provider-llm-key-mask
+    direction: DOWN
+- assertVisible: .*ab12.*
+- scrollUntilVisible:
+    element:
+      id: provider-llm-model
+    direction: UP
+- tapOn:
+    id: provider-llm-model
+- eraseText
+- inputText: user/manual-model
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: provider-llm-save
+    direction: DOWN
+- tapOn:
+    id: provider-llm-save
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: user/manual-model
+    timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: provider-voice-app-id
+    direction: DOWN
+- assertVisible: preserved-app-id
+- scrollUntilVisible:
+    element:
+      id: provider-mode-composed
+    direction: UP
+- tapOn:
+    id: provider-mode-composed
+- scrollUntilVisible:
+    element:
+      id: provider-add-mimo
+    direction: DOWN
+- tapOn:
+    id: provider-add-mimo
+- scrollUntilVisible:
+    element:
+      id: provider-tts-model
+    direction: DOWN
+- tapOn:
+    id: provider-tts-model
+- inputText: manual-tts-model
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: provider-tts-voice
+    direction: DOWN
+- tapOn:
+    id: provider-tts-voice
+- inputText: manual-voice
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: provider-tts-save
+    direction: DOWN
+- tapOn:
+    id: provider-tts-save
+- takeScreenshot: emulator-evidence/provider-tts-settings

@@ -1,0 +1,86 @@
+name: Provider Config Validation
+on:
+  push:
+    branches: ['codex/provider-config-port', main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+      verify_interaction:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: provider-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        version: [baseline, current]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.version == 'baseline' && '11b24ef326f03a2a445139021c03b87a5fd5ee4d' || github.sha }}
+      - uses: actions/checkout@v4
+        with:
+          path: ci-tools
+          sparse-checkout: tools/provider-config-ci
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --prod=false --frozen-lockfile
+      - uses: actions/upload-artifact@v4
+        if: matrix.version == 'current'
+        with:
+          name: provider-lockfile
+          path: pnpm-lock.yaml
+      - name: Run checks and preserve all exit codes
+        run: node ci-tools/tools/provider-config-ci/check.mjs provider-ci
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: provider-${{ matrix.version }}
+          path: provider-ci/
+          if-no-files-found: error
+  gate:
+    needs: checks
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: provider-baseline
+          path: reports/baseline
+      - uses: actions/download-artifact@v4
+        with:
+          name: provider-current
+          path: reports/current
+      - name: Enforce mobile/core and reject new full-suite failures
+        run: node tools/provider-config-ci/gate.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: provider-verification
+          path: reports/
+  android:
+    needs: gate
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/android-apk-release.yml
+    with:
+      validation_run: ${{ format('{0}', github.run_id) }}
+      verify_interaction: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_interaction || false }}
+      publish: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || github.event_name == 'push' && github.ref == 'refs/heads/main' }}

@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import type { LlmProvider, UserIntent } from "@my-brain/core";
 import {
@@ -6,7 +6,6 @@ import {
   applyUserIntent,
   confirmUserIngest,
   createMockLlmProvider,
-  createDeepSeekLlmProvider,
   enterProvisionalPending,
   resolveExplainMore,
   resolveExplainTopicFromConversation,
@@ -15,11 +14,12 @@ import {
 } from "@my-brain/core";
 
 import { loadProviderSettings } from "../services/providerConfigStore";
-import { getSecureCredentialStore } from "../services/secureCredentialStore";
+import { resolveConfiguredLlm } from "../services/configuredLlm";
+import { subscribeProviderProfiles } from "../services/providerProfiles";
 import { useMobileAppStore } from "../stores/mobileAppStore";
 import { useProvisionalStore } from "../stores/provisionalStore";
 
-async function resolveConversationLlm(hasApiKey: boolean): Promise<LlmProvider> {
+async function resolveConversationLlm(hasApiKey: boolean, signal?: AbortSignal): Promise<LlmProvider> {
   if (!hasApiKey) {
     return createMockLlmProvider();
   }
@@ -29,32 +29,16 @@ async function resolveConversationLlm(hasApiKey: boolean): Promise<LlmProvider> 
     return createMockLlmProvider();
   }
 
-  const apiKey = await getSecureCredentialStore().get("llm_api_key");
-  if (!apiKey?.trim()) {
-    return createMockLlmProvider();
-  }
-
-  const fetchImpl =
-    typeof globalThis.fetch === "function"
-      ? globalThis.fetch.bind(globalThis)
-      : undefined;
-  if (!fetchImpl) {
-    return createMockLlmProvider();
-  }
-
-  if (settings.llm.providerId === "deepseek") {
-    return createDeepSeekLlmProvider({
-      apiKey: apiKey.trim(),
-      baseUrl: settings.llm.endpoint.trim() || undefined,
-      model: settings.llm.model.trim() || undefined,
-      fetch: fetchImpl,
-    });
-  }
-
-  return createMockLlmProvider();
+  return resolveConfiguredLlm(signal);
 }
 
 export function useConversationSession() {
+  const pendingExplanation = useRef<Promise<string> | null>(null);
+  const pendingAbort = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const unsubscribe = subscribeProviderProfiles(() => { pendingAbort.current?.abort(); pendingExplanation.current = null; });
+    return () => { pendingAbort.current?.abort(); unsubscribe(); };
+  }, []);
   const conversation = useMobileAppStore((s) => s.conversation);
   const setConversation = useMobileAppStore((s) => s.setConversation);
   const graph = useMobileAppStore((s) => s.graph);
@@ -91,6 +75,7 @@ export function useConversationSession() {
 
   const dispatchIntent = useCallback(
     (intent: UserIntent) => {
+      pendingAbort.current?.abort();
       const provisionalIdBefore = conversation.activeProvisionalId;
 
       if (intent === "explain_more") {
@@ -117,18 +102,21 @@ export function useConversationSession() {
         });
         setConversation(interim);
 
-        void (async () => {
-          const llm = await resolveConversationLlm(hasApiKey);
-          const resolved = await resolveExplainMore({ topic, context, llm });
-          if (resolved.source !== "llm") {
-            return;
-          }
+        const settingsAtStart = JSON.stringify(loadProviderSettings().llm);
+        const controller = new AbortController(); pendingAbort.current = controller;
+        pendingExplanation.current = (async () => {
+          let text = assistantReply;
+          try {
+            const llm = await resolveConversationLlm(hasApiKey, controller.signal);
+            const resolved = await resolveExplainMore({ topic, context, llm });
+            if (resolved.source === "llm") text = resolved.text;
+            else if (hasApiKey) text = "语言模型解释失败，请检查连接后重试。";
+          } catch { text = "语言模型调用失败，请检查配置后重试。"; }
           const current = useMobileAppStore.getState().conversation;
-          if (current.phase !== "explaining") {
-            return;
-          }
-          const { state: upgraded } = applyExplainMoreToState(current, resolved.text);
+          if (controller.signal.aborted || current.phase !== "explaining" || current.activeSignalId !== interim.activeSignalId || current.activeProvisionalId !== interim.activeProvisionalId || JSON.stringify(loadProviderSettings().llm) !== settingsAtStart) return "";
+          const { state: upgraded } = applyExplainMoreToState(current, text);
           setConversation(upgraded);
+          return text;
         })();
 
         if (provisionalIdBefore) {
@@ -238,6 +226,14 @@ export function useConversationSession() {
     focusSignal,
     focusProvisional,
     dispatchIntent,
+    dispatchVoiceIntent: async (intent: UserIntent, signal?: AbortSignal) => {
+      const immediate = dispatchIntent(intent);
+      if (intent !== "explain_more") return immediate;
+      const abort = () => pendingAbort.current?.abort();
+      signal?.addEventListener("abort", abort, { once: true });
+      try { return await pendingExplanation.current; }
+      finally { signal?.removeEventListener("abort", abort); }
+    },
     confirmPendingIngest,
     undoLastChange,
   };

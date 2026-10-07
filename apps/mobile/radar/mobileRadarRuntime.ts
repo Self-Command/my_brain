@@ -5,13 +5,14 @@ import type {
   UserModeProfile,
 } from "@my-brain/core";
 import {
-  createDeepSeekLlmProvider,
+  createConfiguredLlmProvider as createCoreConfiguredLlmProvider,
   createMockLlmProvider,
-  createOpenAiCompatibleLlmProvider,
   fetchLiveRadarSignals,
 } from "@my-brain/core";
 
 import { getSecureCredentialStore, type SecureCredentialStore } from "../services/secureCredentialStore";
+import { providerFetch } from "../services/providerHttp";
+import { activeProfile, loadProviderProfiles } from "../services/providerProfiles";
 import {
   loadProviderSettings,
   type LlmConnectionFetch,
@@ -42,7 +43,7 @@ function resolveRadarFetch(explicit?: RadarFetch): RadarFetch {
     return explicit;
   }
   if (typeof globalThis.fetch === "function") {
-    return globalThis.fetch.bind(globalThis) as RadarFetch;
+    return globalThis.fetch as RadarFetch;
   }
   return async () => {
     throw new Error("fetch unavailable");
@@ -52,21 +53,9 @@ function resolveRadarFetch(explicit?: RadarFetch): RadarFetch {
 function createConfiguredLlmProvider(
   settings: LlmProviderConfig,
   apiKey: string,
-  fetchImpl: RadarFetch,
+  fetchImpl: LlmConnectionFetch,
 ): LlmProvider {
-  const config = {
-    apiKey,
-    baseUrl: settings.endpoint.trim() || undefined,
-    model: settings.model.trim() || undefined,
-    fetch: fetchImpl as LlmConnectionFetch,
-  };
-  if (settings.providerId === "deepseek") {
-    return createDeepSeekLlmProvider(config);
-  }
-  return createOpenAiCompatibleLlmProvider({
-    ...config,
-    baseUrl: settings.endpoint.trim(),
-  });
+  return createCoreConfiguredLlmProvider(settings, apiKey, fetchImpl);
 }
 
 export async function resolveMobileRadarSignals(
@@ -76,7 +65,13 @@ export async function resolveMobileRadarSignals(
   const radarSettings = options.radarSettings ?? settings.radar;
   const llmSettings = options.llmSettings ?? settings.llm;
   const fetchImpl = resolveRadarFetch(options.fetch);
-  const apiKey = await (options.credentialStore ?? getSecureCredentialStore()).get("llm_api_key");
+  const profiles = loadProviderProfiles();
+  const capturedProfile = profiles && !options.llmSettings ? activeProfile(profiles, "llm") : undefined;
+  const apiKey = await (options.credentialStore ?? getSecureCredentialStore()).get(capturedProfile?.credentialRef ?? "llm_api_key");
+  if (capturedProfile) {
+    const latest = loadProviderProfiles(); const current = latest ? activeProfile(latest, "llm") : undefined;
+    if (current?.id !== capturedProfile.id || current.configRevision !== capturedProfile.configRevision || current.credentialRevision !== capturedProfile.credentialRevision) throw new Error("服务配置已改变，请重新获取");
+  }
   const hasLlmKey = Boolean(apiKey?.trim()) && llmSettings.providerId !== "mock";
   const liveRadarEnabled =
     radarSettings.enabledSources.length > 0 &&
@@ -85,7 +80,7 @@ export async function resolveMobileRadarSignals(
   const llm =
     options.llm ??
     (liveEnabled && apiKey
-      ? createConfiguredLlmProvider(llmSettings, apiKey.trim(), fetchImpl)
+      ? createConfiguredLlmProvider(llmSettings, apiKey.trim(), options.fetch ? options.fetch as LlmConnectionFetch : providerFetch)
       : createMockLlmProvider());
 
   const result = await fetchLiveRadarSignals({

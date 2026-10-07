@@ -17,7 +17,6 @@ import {
 } from "../theme/tokens";
 
 const root = join(__dirname, "..", "..", "..");
-const uiDir = join(root, "app-development", "UI");
 
 const primitiveFiles = [
   "GlassCard.tsx",
@@ -52,15 +51,17 @@ describe("ui token foundation (CK-07)", () => {
     }
   });
 
-  it("finds core Warm Ink hex values in UI SVG assets", () => {
-    const sampleSvg = readFileSync(
-      join(uiDir, "03-living-brain-home.svg"),
-      "utf8",
-    );
-    expect(sampleSvg).toContain(warmInkColorContract.dark.background);
-    expect(sampleSvg).toContain(warmInkColorContract.dark.primary);
-    expect(sampleSvg).toContain(warmInkColorContract.dark.accent);
-    expect(sampleSvg).toContain(warmInkColorContract.dark.text);
+  it("keeps readable text contrast against both checked-in theme backgrounds", () => {
+    const luminance = (hex: string) => {
+      const channels = [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255)
+        .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+      return channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722;
+    };
+    for (const theme of [brainTheme.dark, brainTheme.light]) {
+      const foreground = luminance(theme.text);
+      const background = luminance(theme.background);
+      expect((Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   it("defines 8pt spacing grid from DESIGN_SYSTEM §4", () => {

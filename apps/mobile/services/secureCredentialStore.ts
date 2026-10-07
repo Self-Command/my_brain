@@ -1,4 +1,6 @@
-export type CredentialKind = "llm_api_key" | "voice_api_key" | "short_lived_token";
+import { activeProfile, invalidateProfileCredential, loadProviderProfiles } from "./providerProfiles";
+
+export type CredentialKind = "llm_api_key" | "voice_api_key" | "short_lived_token" | `profile.${string}`;
 
 const KEY_PREFIX = "provider.credential.";
 
@@ -12,7 +14,21 @@ export interface SecureCredentialStore {
 }
 
 function storageKey(kind: CredentialKind): string {
+  const profiles = loadProviderProfiles();
+  if (profiles && (kind === "llm_api_key" || kind === "voice_api_key")) {
+    const profile = activeProfile(profiles, kind === "llm_api_key" ? "llm" : "voice");
+    if (profile) return `${KEY_PREFIX}${profile.credentialRef}`;
+  }
   return `${KEY_PREFIX}${kind}`;
+}
+
+function credentialChanged(kind: CredentialKind) {
+  const settings = loadProviderProfiles();
+  if (!settings) return;
+  const profile = kind === "llm_api_key" || kind === "voice_api_key"
+    ? activeProfile(settings, kind === "llm_api_key" ? "llm" : "voice")
+    : settings.profiles.find((p) => p.credentialRef === kind);
+  if (profile) invalidateProfileCredential(profile.id);
 }
 
 export function maskCredentialLast4(last4: string | null): string {
@@ -41,9 +57,11 @@ export function createMemorySecureCredentialStore(): SecureCredentialStore {
     },
     async set(kind, value) {
       bag.set(storageKey(kind), value);
+      credentialChanged(kind);
     },
     async delete(kind) {
       bag.delete(storageKey(kind));
+      credentialChanged(kind);
     },
   };
 }
@@ -75,10 +93,12 @@ export function createExpoSecureCredentialStore(): SecureCredentialStore {
     async set(kind, value) {
       const SecureStore = await loadSecureStore();
       await SecureStore.setItemAsync(storageKey(kind), value);
+      credentialChanged(kind);
     },
     async delete(kind) {
       const SecureStore = await loadSecureStore();
       await SecureStore.deleteItemAsync(storageKey(kind));
+      credentialChanged(kind);
     },
   };
 }

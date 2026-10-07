@@ -1,0 +1,110 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createTestStorageSession } from "../storage/testStorageSession";
+import { setStorageSession } from "../storage/storageSession";
+import { createMemorySecureCredentialStore } from "./secureCredentialStore";
+import { activeProfile, loadProviderProfiles, migrateProviderProfiles, profileReadiness, recordProfileVerification, saveProviderProfiles, updateServiceProfile } from "./providerProfiles";
+import { DEFAULT_PROVIDER_SETTINGS, loadProviderSettings, selectMainRouteEnabled } from "./providerConfigStore";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+let session: ReturnType<typeof createTestStorageSession>;
+beforeEach(() => { session = createTestStorageSession(":memory:"); session.storage.migrate(); setStorageSession(session); });
+afterEach(() => { setStorageSession(null); session.driver.close?.(); });
+describe("provider profile migration and readiness", () => {
+  it("preserves legacy addresses, models, Doubao and unrelated configuration without plaintext secrets", async () => {
+    const old = { ...DEFAULT_PROVIDER_SETTINGS, llm: { providerId: "custom", endpoint: "https://example.com/prefix/v1", model: "custom-model" }, voice: { ...DEFAULT_PROVIDER_SETTINGS.voice, appId: "old-app", voiceModel: "2.2.0.0" }, executionApi: { baseUrl: "https://example.com/execution", enabled: true } };
+    session.storage.setMeta("provider.settings.v1", JSON.stringify(old));
+    const credentials = createMemorySecureCredentialStore();
+    await credentials.set("llm_api_key", "private-llm-fixture"); await credentials.set("voice_api_key", "private-voice-fixture");
+    const migrated = await migrateProviderProfiles(credentials);
+    expect(activeProfile(migrated, "llm")?.modelId).toBe("custom-model");
+    expect(activeProfile(migrated, "voice")?.appId).toBe("old-app");
+    expect(loadProviderSettings().voice.voiceModel).toBe("2.2.0.0");
+    expect(migrated.executionApi).toEqual(old.executionApi);
+    expect(await credentials.get("llm_api_key")).toBe("private-llm-fixture");
+    expect(await credentials.get("voice_api_key")).toBe("private-voice-fixture");
+    expect(JSON.stringify(migrated)).not.toContain("private-llm-fixture");
+    expect(session.storage.getMeta("provider.settings.v1.backup")).toBe(JSON.stringify(old));
+    expect(await migrateProviderProfiles(credentials)).toEqual(migrated);
+  });
+  it("resumes a credential copy failure without deleting old keys or activating incomplete settings", async () => {
+    session.storage.setMeta("provider.settings.v1", JSON.stringify(DEFAULT_PROVIDER_SETTINGS));
+    const credentials = createMemorySecureCredentialStore();
+    await credentials.set("llm_api_key", "key-one"); await credentials.set("voice_api_key", "key-two");
+    const set = credentials.set.bind(credentials);
+    credentials.set = vi.fn(async (kind, value) => { if (kind === "profile.migrated-doubao") throw new Error("interrupted"); await set(kind, value); });
+    await expect(migrateProviderProfiles(credentials)).rejects.toThrow("interrupted");
+    expect(loadProviderProfiles()).toBeNull();
+    expect(await credentials.get("voice_api_key")).toBe("key-two");
+    credentials.set = set;
+    const settings = await migrateProviderProfiles(credentials);
+    expect(settings.profiles).toHaveLength(2);
+    expect(await credentials.get("profile.migrated-doubao")).toBe("key-two");
+  });
+  it("does not inherit old verification and permits text independently of voice", async () => {
+    session.storage.setMeta("provider.verification.v1", JSON.stringify({ verified: true, llmLive: true, voiceLive: true }));
+    const settings = await migrateProviderProfiles(createMemorySecureCredentialStore());
+    expect(profileReadiness(settings).verified).toBe(false);
+    const llm = activeProfile(settings, "llm")!;
+    recordProfileVerification(llm, true);
+    const ready = profileReadiness(loadProviderProfiles()!);
+    expect(selectMainRouteEnabled(ready)).toBe(true); expect(ready.voiceLive).toBe(false);
+    updateServiceProfile({ ...llm, modelId: "different" });
+    expect(profileReadiness(loadProviderProfiles()!).llmLive).toBe(false);
+  });
+  it("isolates credentials between profiles and invalidates validation when a key changes", async () => {
+    const credentials = createMemorySecureCredentialStore();
+    const settings = await migrateProviderProfiles(credentials);
+    const old = activeProfile(settings, "llm")!;
+    const other = { ...old, id: "other", credentialRef: "profile.other" as const };
+    saveProviderProfiles({ ...settings, profiles: [...settings.profiles, other] });
+    await credentials.set(old.credentialRef, "one"); await credentials.set(other.credentialRef, "two");
+    const current = activeProfile(loadProviderProfiles()!, "llm")!;
+    recordProfileVerification(current, true);
+    expect(profileReadiness(loadProviderProfiles()!).llmLive).toBe(true);
+    await credentials.set("llm_api_key", "changed");
+    expect(profileReadiness(loadProviderProfiles()!).llmLive).toBe(false);
+    expect(await credentials.get(other.credentialRef)).toBe("two");
+  });
+  it("retains malformed legacy settings rather than overwriting with defaults", async () => {
+    session.storage.setMeta("provider.settings.v1", "invalid-json");
+    await expect(migrateProviderProfiles(createMemorySecureCredentialStore())).rejects.toThrow("损坏");
+    expect(session.storage.getMeta("provider.settings.v1")).toBe("invalid-json"); expect(loadProviderProfiles()).toBeNull();
+  });
+  it("keeps Doubao credentials while selecting exactly one composed or realtime voice mode", async () => {
+    const credentials = createMemorySecureCredentialStore(); await credentials.set("voice_api_key", "original-doubao-token");
+    const settings = await migrateProviderProfiles(credentials);
+    const doubao = activeProfile(settings, "voice")!;
+    const tts = { ...doubao, id: "tts", role: "tts" as const, adapterId: "chat-completions-audio" as const, baseUrl: "https://example.com/v1", modelId: "editable-tts", voiceId: "manual", credentialRef: "profile.tts" as const };
+    saveProviderProfiles({ ...settings, profiles: [...settings.profiles, tts] });
+    await credentials.set(tts.credentialRef, "separate-tts-key");
+    const current = loadProviderProfiles()!;
+    saveProviderProfiles({ ...current, voiceSelection: { mode: "composed", ttsProfileId: tts.id } });
+    expect(activeProfile(loadProviderProfiles()!, "voice")?.role).toBe("tts");
+    expect(await credentials.get("voice_api_key")).toBe("separate-tts-key");
+    expect(await credentials.get(doubao.credentialRef)).toBe("original-doubao-token");
+    saveProviderProfiles({ ...loadProviderProfiles()!, voiceSelection: { mode: "realtime", realtimeProfileId: doubao.id } });
+    expect(activeProfile(loadProviderProfiles()!, "voice")?.role).toBe("realtime");
+    expect(await credentials.get("voice_api_key")).toBe("original-doubao-token");
+  });
+  it("retains malformed v2 settings and refuses to replace them using the legacy copy", async () => {
+    session.storage.setMeta("provider.settings.v2", "{broken");
+    await expect(migrateProviderProfiles(createMemorySecureCredentialStore())).rejects.toThrow("损坏");
+    expect(session.storage.getMeta("provider.settings.v2")).toBe("{broken");
+  });
+  it("serializes simultaneous boot/settings migration and retains settings after storage restart", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "provider-restart-")); const database = join(directory, "state.sqlite");
+    session.driver.close?.(); session = createTestStorageSession(database); session.storage.migrate(); setStorageSession(session);
+    try {
+      const credentials = createMemorySecureCredentialStore();
+      const [first, second] = await Promise.all([migrateProviderProfiles(credentials), migrateProviderProfiles(credentials)]);
+      expect(first).toEqual(second);
+      const original = activeProfile(first, "llm")!;
+      updateServiceProfile({ ...original, baseUrl: "https://example.com/prefix/v1", modelId: "restart-model" });
+      await credentials.set(original.credentialRef, "restart-secret");
+      session.driver.close?.(); session = createTestStorageSession(database); session.storage.migrate(); setStorageSession(session);
+      expect(activeProfile(loadProviderProfiles()!, "llm")?.modelId).toBe("restart-model");
+      expect(await credentials.get("llm_api_key")).toBe("restart-secret");
+    } finally { session.driver.close?.(); session = createTestStorageSession(":memory:"); setStorageSession(session); rmSync(directory, { recursive: true, force: true }); }
+  });
+});

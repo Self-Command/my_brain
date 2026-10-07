@@ -22,7 +22,7 @@ function readCompanionDevEnvRecord(): Record<string, string | undefined> {
   if (!companionDevEnv || typeof companionDevEnv !== "object") {
     return {};
   }
-  const record = {};
+  const record: Record<string, string | undefined> = {};
   for (const [key, value] of Object.entries(companionDevEnv as Record<string, unknown>)) {
     if (typeof value === "string" && value.trim().length > 0) {
       record[key] = value.trim();

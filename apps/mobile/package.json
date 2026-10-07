@@ -41,6 +41,7 @@
     "react-native": "0.76.9",
     "sqlite-backup-exclusion": "file:./modules/sqlite-backup-exclusion",
     "android-share-intent": "file:./modules/android-share-intent",
+    "provider-http": "file:./modules/provider-http",
     "zustand": "^5.0.3"
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 import type { GraphRepository } from "../graph/types.js";
 
-/** Short-term companion chat window — default discard after session. */
+/** Short-term companion chat context — default discard after session. */
 export const EPHEMERAL_SESSION_MAX_MS = 10 * 60 * 1000;
 
 /** Rolling in-memory context cap; older turns drop from active context. */

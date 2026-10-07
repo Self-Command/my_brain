@@ -60,6 +60,7 @@ function createMockWebSocketFactory(): {
 function testVoiceDeps(overrides: Partial<VoiceSessionDeps> = {}): VoiceSessionDeps {
   return {
     deviceId: "device-abc",
+    voiceSettings: { providerId: "mock", voiceModel: "mock", region: "" },
     tokenStore: createMemorySecureTokenStore(),
     micPermission: createMemoryMicrophonePermissionPort("granted"),
     skipMicPermissionCheck: true,

@@ -50,6 +50,7 @@ export function M3VoiceDiagnosticsPanel() {
   const platform = Platform.OS;
   const voice = useVoiceSession({
     deviceId: M3_DIAG_DEVICE_ID,
+    voiceSettings: { providerId: "mock", voiceModel: "mock-diagnostics", region: "" },
     platformOs: platform === "ios" ? "ios" : "android",
     skipMicPermissionCheck: true,
     onDegradedVoice: () => setVoiceDisconnected(true),

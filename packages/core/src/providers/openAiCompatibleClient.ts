@@ -76,7 +76,10 @@ export async function createOpenAiCompatibleCompletion(
   const url = `${normalizeBaseUrl(config.baseUrl)}/chat/completions`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60_000);
-  const signal = options.signal ?? controller.signal;
+  const abort = () => controller.abort();
+  if (options.signal?.aborted) controller.abort();
+  options.signal?.addEventListener("abort", abort, { once: true });
+  const signal = controller.signal;
 
   try {
     const response = await config.fetch(url, {
@@ -95,11 +98,10 @@ export async function createOpenAiCompatibleCompletion(
     });
 
     if (!response.ok) {
-      const body = await response.text();
       const code = mapHttpStatusToErrorCode(response.status);
       throw new LlmProviderError(
         code,
-        `OpenAI-compatible LLM request failed: HTTP ${response.status} ${body.slice(0, 200)}`,
+        `OpenAI-compatible LLM request failed: HTTP ${response.status}`,
         response.status,
       );
     }
@@ -118,6 +120,7 @@ export async function createOpenAiCompatibleCompletion(
     throw toNetworkError(error);
   } finally {
     clearTimeout(timeoutId);
+    options.signal?.removeEventListener("abort", abort);
   }
 }
 

@@ -317,13 +317,13 @@ class MockDoubaoWs implements DoubaoWebSocketLike {
 }
 
 describe("CK-04 companion provider gate", () => {
-  it("evaluateProviderGateResults requires both live checks", () => {
+  it("evaluateProviderGateResults enables text when LLM is live and keeps voice separate", () => {
     expect(
       evaluateProviderGateResults(
         { status: "live", hint: "ok" },
         { status: "error", code: "UNAUTHORIZED", hint: "bad key" },
       ).verified,
-    ).toBe(false);
+    ).toBe(true);
     expect(
       evaluateProviderGateResults(
         { status: "live", hint: "ok" },
@@ -345,7 +345,7 @@ describe("CK-04 companion provider gate", () => {
     expect(gate.verification.verified).toBe(false);
   });
 
-  it("ModelScope success with mocked fetch but voice failure blocks gate", async () => {
+  it("LLM success with voice failure permits text and leaves voice disabled", async () => {
     const fetch = mockLlmFetch(() => ({
       ok: true,
       status: 200,
@@ -363,7 +363,7 @@ describe("CK-04 companion provider gate", () => {
     );
     expect(gate.llm.status).toBe("live");
     expect(gate.voice.status).toBe("mock");
-    expect(gate.verification.verified).toBe(false);
+    expect(gate.verification.verified).toBe(true);
   });
 
   it("both ModelScope and Doubao mocked live enables gate", async () => {

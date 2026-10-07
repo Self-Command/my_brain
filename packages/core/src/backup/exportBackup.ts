@@ -141,7 +141,8 @@ export function parseBackupSnapshot(json: unknown): BackupSnapshotPayload {
   if (!Array.isArray(json.graph_history)) {
     throw new MalformedBackupJsonError("Backup payload must include graph_history array");
   }
-  return json as BackupSnapshotPayload;
+  // JSON starts as an unknown record; the required payload structure is validated above.
+  return json as unknown as BackupSnapshotPayload;
 }
 
 /** Graph-only export helper for harness/tests — not a full M7A backup. */

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -22,6 +22,8 @@ import { useMobileAppStore } from "../stores/mobileAppStore";
 import { useProvisionalStore } from "../stores/provisionalStore";
 import { useTheme } from "../theme/ThemeProvider";
 import { brainTheme, safeArea, spacing } from "../theme/tokens";
+import { completeConfiguredChat, mobileChatMessages } from "../services/configuredLlm";
+import { subscribeProviderProfiles } from "../services/providerProfiles";
 
 interface Props {
   testID?: string;
@@ -33,6 +35,13 @@ export function CompanionChatScreen({
   onClose,
 }: Props) {
   const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [requestError, setRequestError] = useState("");
+  const activeRequest = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const unsubscribe = subscribeProviderProfiles(() => { activeRequest.current?.abort(); setBusy(false); });
+    return () => { activeRequest.current?.abort(); unsubscribe(); };
+  }, []);
   const ephemeralChat = useMobileAppStore((s) => s.ephemeralChat);
   const startEphemeralChat = useMobileAppStore((s) => s.startEphemeralChat);
   const setEphemeralChat = useMobileAppStore((s) => s.setEphemeralChat);
@@ -49,10 +58,6 @@ export function CompanionChatScreen({
       startEphemeralChat();
     }
   }, [ephemeralChat, startEphemeralChat]);
-
-  if (!chat) {
-    return null;
-  }
 
   const styles = useMemo(
     () =>
@@ -108,7 +113,10 @@ export function CompanionChatScreen({
     [colors, theme],
   );
 
+  if (!chat) return null;
+
   const send = (text: string) => {
+    if (busy) return;
     const trimmed = text.trim();
     if (!trimmed) {
       return;
@@ -116,7 +124,7 @@ export function CompanionChatScreen({
     if (hasRejectMemoryIntent(trimmed)) {
       const withUser = {
         ...chat,
-        turns: [...chat.turns, { role: "user", text: trimmed, atMs: Date.now() }],
+        turns: [...chat.turns, { role: "user" as const, text: trimmed, atMs: Date.now() }],
         totalUserTurns: chat.totalUserTurns + 1,
       };
       setEphemeralChat(rejectEphemeralMemory(withUser));
@@ -141,16 +149,34 @@ export function CompanionChatScreen({
       setInput("");
       return;
     }
-    const { state } = appendCasualTurn(chat, trimmed);
-    setEphemeralChat(state);
+    if (!useMobileAppStore.getState().providerLlmLive) {
+      const { state } = appendCasualTurn(chat, trimmed);
+      setEphemeralChat(state);
+      setRequestError("当前为明确的演示对话；真实回复需先验证语言模型。");
+      setInput(""); return;
+    }
+    activeRequest.current?.abort();
+    const controller = new AbortController(); activeRequest.current = controller;
+    const withUser = { ...chat, turns: [...chat.turns, { role: "user" as const, text: trimmed, atMs: Date.now() }], totalUserTurns: chat.totalUserTurns + 1 };
+    setEphemeralChat(withUser); setBusy(true); setRequestError("");
+    void completeConfiguredChat(mobileChatMessages(chat, trimmed), controller.signal).then((reply) => {
+      const current = useMobileAppStore.getState().ephemeralChat;
+      if (controller.signal.aborted || current?.sessionId !== chat.sessionId) return;
+      const next = appendCasualTurn(chat, trimmed).state;
+      next.turns[next.turns.length - 1] = { role: "assistant", text: reply, atMs: Date.now() };
+      setEphemeralChat(next);
+    }).catch(() => { if (!controller.signal.aborted) setRequestError("语言模型回复失败，请检查连接后重试。"); })
+      .finally(() => { if (activeRequest.current === controller) setBusy(false); });
     setInput("");
   };
 
   const onRejectMemory = () => {
+    activeRequest.current?.abort(); setBusy(false);
     setEphemeralChat(rejectEphemeralMemory(chat));
   };
 
   const onSaveFromPill = () => {
+    activeRequest.current?.abort(); setBusy(false);
     const lastUser = [...chat.turns].reverse().find((t) => t.role === "user");
     const text = lastUser?.text ?? (input.trim() || "陪聊片段");
     const candidate = addChatSaveCandidate(chat, `记下来：${text}`);
@@ -168,6 +194,7 @@ export function CompanionChatScreen({
   };
 
   const handleClose = () => {
+    activeRequest.current?.abort();
     closeCompanionChat();
     onClose?.();
   };
@@ -236,9 +263,11 @@ export function CompanionChatScreen({
           onChangeText={setInput}
           testID="companion-chat-input"
         />
-        <Pressable onPress={() => send(input)} testID="companion-chat-send">
-          <Text style={{ color: colors.primary }}>发送</Text>
+        <Pressable disabled={busy} onPress={() => send(input)} testID="companion-chat-send">
+          <Text style={{ color: colors.primary }}>{busy ? "回复中…" : "发送"}</Text>
         </Pressable>
+        {busy ? <Pressable onPress={() => { activeRequest.current?.abort(); setBusy(false); }}><Text style={{ color: colors.primary }}>停止回复</Text></Pressable> : null}
+        {requestError ? <Text style={styles.caption}>{requestError}</Text> : null}
         <Text style={styles.graphGuard} testID="companion-chat-graph-guard">
           永久节点 {graphNodeCount} · 陪聊不自动入库
         </Text>

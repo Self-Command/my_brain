@@ -1,0 +1,62 @@
+name: Provider Emulator Diagnostics
+on:
+  workflow_dispatch:
+    inputs:
+      apk_run:
+        description: Run containing android-apk for diagnostics only
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: emulator-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  emulator:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: apk-release
+          run-id: ${{ inputs.apk_run || '37565100321' }}
+          github-token: ${{ github.token }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install pinned Maestro and baseline APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download cli-2.11.0 --repo mobile-dev-inc/Maestro --pattern maestro.zip --pattern checksums_sha256.txt --dir maestro-download
+          (cd maestro-download && grep 'maestro.zip' checksums_sha256.txt | sha256sum -c -)
+          unzip -q maestro-download/maestro.zip -d "$HOME/.maestro"
+          echo "$HOME/.maestro/maestro/bin" >> "$GITHUB_PATH"
+          gh release download android-build-3-1 --repo '${{ github.repository }}' --pattern my-brain-android.apk --dir baseline-apk
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: bash tools/provider-config-ci/emulator-smoke.sh
+      - name: Record diagnostic source and APK source separately
+        if: always()
+        run: |
+          mkdir -p emulator-evidence
+          node -e 'const fs=require("fs");const apk=require("./apk-release/apk-verification.json");fs.writeFileSync("emulator-evidence/diagnostic-sources.json",JSON.stringify({purpose:"diagnostics only; never authorizes release",scriptSha:process.env.GITHUB_SHA,apkSha:apk.sha},null,2))'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: emulator-diagnostics
+          path: emulator-evidence/
+          if-no-files-found: error

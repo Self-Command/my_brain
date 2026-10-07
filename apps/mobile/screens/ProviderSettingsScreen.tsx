@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -22,20 +22,15 @@ import {
   loadProviderSettings,
   saveProviderSettings,
   testExecutionApiConnection,
-  testLlmConnection,
   testRadarConnection,
   testTokenExchangeConnection,
-  testVoiceConnection,
-  verifyCompanionProviderGate,
   type ConnectionTestResult,
   type ProviderSettingsConfig,
 } from "../services/providerConfigStore";
-import {
-  getSecureCredentialStore,
-  maskCredentialLast4,
-} from "../services/secureCredentialStore";
 import { validateProviderHttpsUrl } from "../services/providerUrlValidation";
+import { getSecureCredentialStore } from "../services/secureCredentialStore";
 import { useMobileAppStore } from "../stores/mobileAppStore";
+import { UniversalProviderSettings } from "../components/providers/UniversalProviderSettings";
 import { useTheme } from "../theme/ThemeProvider";
 import { brainTheme, safeArea, spacing, typography } from "../theme/tokens";
 import { isVisualFixtureRoute } from "../visual-fixtures/captureSession";
@@ -43,7 +38,7 @@ import { isVisualFixtureRoute } from "../visual-fixtures/captureSession";
 type BlockId = "llm" | "voice" | "radar" | "tokenExchange" | "executionApi";
 
 export interface ProviderSettingsScreenProps {
-  /** First-launch gate — blocks main route until both live checks pass. */
+  /** First-launch gate — opens text mode after LLM verification. */
   launchGate?: boolean;
 }
 
@@ -72,25 +67,11 @@ function ProviderSettingsScreenInner({
   );
 
   const [settings, setSettings] = useState<ProviderSettingsConfig>(() => loadProviderSettings());
-  const [llmKeyLast4, setLlmKeyLast4] = useState<string | null>(null);
-  const [voiceKeyLast4, setVoiceKeyLast4] = useState<string | null>(null);
-  const [llmKeyDraft, setLlmKeyDraft] = useState("");
-  const [voiceKeyDraft, setVoiceKeyDraft] = useState("");
   const [results, setResults] = useState<Partial<Record<BlockId, ConnectionTestResult>>>({});
-  const [gateMessage, setGateMessage] = useState<string | null>(null);
 
   const providerVerified = useMobileAppStore((s) => s.providerVerified);
-  const applyProviderVerification = useMobileAppStore((s) => s.applyProviderVerification);
 
   const shellEnv = useMemo(() => readMobileAppEnv(), []);
-
-  useEffect(() => {
-    void (async () => {
-      const store = getSecureCredentialStore();
-      setLlmKeyLast4(await store.getLast4("llm_api_key"));
-      setVoiceKeyLast4(await store.getLast4("voice_api_key"));
-    })();
-  }, []);
 
   const syncStoreStatus = useCallback(
     (next: ProviderSettingsConfig, hasLlm: boolean, hasVoice: boolean) => {
@@ -103,72 +84,6 @@ function ProviderSettingsScreenInner({
       useMobileAppStore.setState({ hasApiKey: hasLlm, providerStatus: snapshot });
     },
     [voiceDisconnected],
-  );
-
-  const syncVoiceConnectionResult = useCallback(
-    (result: ConnectionTestResult, hasKey: boolean) => {
-      useMobileAppStore.setState((state) => {
-        const voiceLive = result.status === "live";
-        const llmLive = state.providerLlmLive;
-        const verified = llmLive && voiceLive;
-        return {
-          hasApiKey: hasKey || state.hasApiKey,
-          providerStatus: {
-            ...state.providerStatus,
-            voice:
-              result.status === "live"
-                ? "connected"
-                : result.status === "mock"
-                  ? "mock"
-                  : "disconnected",
-            lastErrorCode: result.status === "live" ? undefined : result.code,
-          },
-          providerVoiceLive: voiceLive,
-          providerVerified: verified,
-          providerLlmLive: llmLive,
-        };
-      });
-      const next = useMobileAppStore.getState();
-      applyProviderVerification({
-        verified: next.providerVerified,
-        llmLive: next.providerLlmLive,
-        voiceLive: next.providerVoiceLive,
-      });
-    },
-    [applyProviderVerification],
-  );
-
-  const syncLlmConnectionResult = useCallback(
-    (result: ConnectionTestResult, hasKey: boolean) => {
-      useMobileAppStore.setState((state) => {
-        const llmLive = result.status === "live";
-        const voiceLive = state.providerVoiceLive;
-        const verified = llmLive && voiceLive;
-        return {
-          hasApiKey: hasKey,
-          providerStatus: {
-            ...state.providerStatus,
-            llm:
-              result.status === "live"
-                ? "live"
-                : result.status === "mock"
-                  ? "mock"
-                  : "degraded",
-            lastErrorCode: result.status === "live" ? undefined : result.code,
-          },
-          providerLlmLive: llmLive,
-          providerVerified: verified,
-          providerVoiceLive: voiceLive,
-        };
-      });
-      const next = useMobileAppStore.getState();
-      applyProviderVerification({
-        verified: next.providerVerified,
-        llmLive: next.providerLlmLive,
-        voiceLive: next.providerVoiceLive,
-      });
-    },
-    [applyProviderVerification],
   );
 
   const persistSettings = useCallback(
@@ -186,64 +101,9 @@ function ProviderSettingsScreenInner({
     [syncStoreStatus],
   );
 
-  const saveLlmKey = useCallback(async () => {
-    if (!llmKeyDraft.trim()) {
-      return;
-    }
-    const store = getSecureCredentialStore();
-    await store.set("llm_api_key", llmKeyDraft.trim());
-    setLlmKeyDraft("");
-    const last4 = await store.getLast4("llm_api_key");
-    setLlmKeyLast4(last4);
-    appendProviderConfigAudit("llm_api_key", "ok", "credential_configured");
-    syncStoreStatus(settings, true, await store.has("voice_api_key"));
-  }, [llmKeyDraft, settings, syncStoreStatus]);
-
-  const saveVoiceKey = useCallback(async () => {
-    if (!voiceKeyDraft.trim()) {
-      return;
-    }
-    const store = getSecureCredentialStore();
-    await store.set("voice_api_key", voiceKeyDraft.trim());
-    setVoiceKeyDraft("");
-    const last4 = await store.getLast4("voice_api_key");
-    setVoiceKeyLast4(last4);
-    appendProviderConfigAudit("voice_api_key", "ok", "credential_configured");
-    syncStoreStatus(settings, await store.has("llm_api_key"), true);
-  }, [voiceKeyDraft, settings, syncStoreStatus]);
-
   const setResult = useCallback((block: BlockId, result: ConnectionTestResult) => {
     setResults((prev) => ({ ...prev, [block]: result }));
   }, []);
-
-  const runLaunchGateVerification = useCallback(async () => {
-    const store = getSecureCredentialStore();
-    const gate = await verifyCompanionProviderGate({
-      settings,
-      llmHasKey: await store.has("llm_api_key"),
-      llmApiKey: await store.get("llm_api_key"),
-      voiceHasKey: await store.has("voice_api_key"),
-      voiceApiKey: await store.get("voice_api_key"),
-      voiceDisconnected,
-    });
-    setResult("llm", gate.llm);
-    setResult("voice", gate.voice);
-    syncLlmConnectionResult(gate.llm, await store.has("llm_api_key"));
-    syncVoiceConnectionResult(gate.voice, await store.has("voice_api_key"));
-    applyProviderVerification(gate.verification);
-    if (gate.verification.verified) {
-      setGateMessage("ModelScope 与豆包语音均已连接，可进入主界面。");
-    } else {
-      setGateMessage("需要 ModelScope 语言模型与豆包语音均检测为已连接，主界面仍锁定。");
-    }
-    return gate;
-  }, [
-    applyProviderVerification,
-    settings,
-    syncLlmConnectionResult,
-    syncVoiceConnectionResult,
-    voiceDisconnected,
-  ]);
 
   const handleBack = useCallback(() => onBack(), [onBack]);
 
@@ -264,7 +124,7 @@ function ProviderSettingsScreenInner({
           providerVisualCapture
             ? "密钥只存本机；未测试成功前不会显示为已连接。"
             : launchGate
-              ? "配置并验证 ModelScope 与豆包语音后再进入主界面"
+              ? "语言模型验证后可进入；语音未就绪时仍可使用文字"
               : "密钥、语音与智能服务"
         }
         themeMode={mode}
@@ -279,13 +139,8 @@ function ProviderSettingsScreenInner({
         {launchGate ? (
           <GlassCard themeMode={mode} testID="provider-launch-gate-banner" style={styles.banner}>
             <Text style={[styles.bannerText, { color: theme.warning }]}>
-              首次启动需完成 Provider Setup。未完成 ModelScope 与豆包语音 live 检测前，不会进入 LivingBrainHome、Today 或雷达。
+              首次启动需验证语言模型。语音单独验证，失败时可以先用文字聊聊。
             </Text>
-            {gateMessage ? (
-              <Text style={[styles.bannerText, { color: theme.textSecondary, marginTop: spacing.xs }]}>
-                {gateMessage}
-              </Text>
-            ) : null}
             {providerVerified ? (
               <Text style={[styles.bannerText, { color: theme.primary, marginTop: spacing.xs }]}>
                 已通过 live 检测 — 主界面已解锁。
@@ -296,134 +151,12 @@ function ProviderSettingsScreenInner({
         <GlassCard themeMode={mode} testID="provider-settings-mock-banner" style={styles.banner}>
           <Text style={[styles.bannerText, { color: theme.warning }]}>
             {providerVisualCapture
-              ? "Doubao / ModelScope 直连；连接状态始终可见，测试失败不会显示「已连接」。"
+              ? "兼容接口与豆包均可选择；测试失败不会显示「已连接」。"
               : "连接状态始终可见；部分能力为演示或降级时也会如实说明，测试失败不会显示「已连接」。"}
           </Text>
         </GlassCard>
 
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>语言模型</Text>
-        <ProviderConnectionRow
-          title="语言模型"
-          subtitle={`${settings.llm.providerId} · ${settings.llm.model}`}
-          result={results.llm ?? null}
-          themeMode={mode}
-          testID="provider-row-llm"
-        />
-        <TextInput
-          testID="provider-llm-endpoint"
-          value={settings.llm.endpoint}
-          onChangeText={(endpoint) =>
-            setSettings((s) => ({ ...s, llm: { ...s.llm, endpoint } }))
-          }
-          onBlur={() => persistSettings(settings, "llm.endpoint")}
-          placeholder="服务地址（不含密钥）"
-          placeholderTextColor={theme.textTertiary}
-          style={[styles.input, { color: theme.text, borderColor: theme.border }]}
-        />
-        <Text style={[styles.keyLabel, { color: theme.textSecondary }]} testID="provider-llm-key-mask">
-          API Key：{maskCredentialLast4(llmKeyLast4)}
-        </Text>
-        <TextInput
-          testID="provider-llm-key-input"
-          value={llmKeyDraft}
-          onChangeText={setLlmKeyDraft}
-          secureTextEntry
-          placeholder="粘贴 API Key（仅保存在本机）"
-          placeholderTextColor={theme.textTertiary}
-          style={[styles.input, { color: theme.text, borderColor: theme.border }]}
-        />
-        <Pressable testID="provider-llm-key-save" onPress={() => void saveLlmKey()} style={styles.saveKey}>
-          <Text style={{ color: theme.primary }}>保存 Key</Text>
-        </Pressable>
-        <TestConnectionButton
-          testID="test-connection-llm"
-          themeMode={mode}
-          onTest={async () => {
-            const store = getSecureCredentialStore();
-            const hasKey = await store.has("llm_api_key");
-            const apiKey = hasKey ? await store.get("llm_api_key") : null;
-            const result = await testLlmConnection(settings.llm, { hasKey, apiKey });
-            syncLlmConnectionResult(result, hasKey);
-            return result;
-          }}
-          onResult={(r) => setResult("llm", r)}
-        />
-
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>语音服务</Text>
-        <ProviderConnectionRow
-          title="豆包语音"
-          subtitle={`${settings.voice.providerId} · ${settings.voice.region}`}
-          result={results.voice ?? null}
-          themeMode={mode}
-          testID="provider-row-voice"
-        />
-        <TextInput
-          testID="provider-voice-app-id"
-          value={settings.voice.appId ?? ""}
-          onChangeText={(appId) =>
-            setSettings((s) => ({ ...s, voice: { ...s.voice, appId } }))
-          }
-          onBlur={() => persistSettings(settings, "voice.appId")}
-          placeholder="豆包 App ID（X-Api-App-ID）"
-          placeholderTextColor={theme.textTertiary}
-          autoCapitalize="none"
-          style={[styles.input, { color: theme.text, borderColor: theme.border }]}
-        />
-        <Text style={[styles.keyLabel, { color: theme.textSecondary }]} testID="provider-voice-key-mask">
-          语音 Key：{maskCredentialLast4(voiceKeyLast4)}
-        </Text>
-        <TextInput
-          testID="provider-voice-key-input"
-          value={voiceKeyDraft}
-          onChangeText={setVoiceKeyDraft}
-          secureTextEntry
-          placeholder="粘贴语音 API Key（仅保存在本机）"
-          placeholderTextColor={theme.textTertiary}
-          style={[styles.input, { color: theme.text, borderColor: theme.border }]}
-        />
-        <Pressable
-          testID="provider-voice-key-save"
-          onPress={() => void saveVoiceKey()}
-          style={styles.saveKey}
-        >
-          <Text style={{ color: theme.primary }}>保存语音 Key</Text>
-        </Pressable>
-        <TestConnectionButton
-          testID="test-connection-voice"
-          themeMode={mode}
-          onTest={async () => {
-            const store = getSecureCredentialStore();
-            const hasKey = await store.has("voice_api_key");
-            const result = await testVoiceConnection(
-              settings.voice,
-              hasKey,
-              voiceDisconnected,
-              { apiKey: await store.get("voice_api_key") },
-            );
-            syncVoiceConnectionResult(result, hasKey);
-            return result;
-          }}
-          onResult={(r) => setResult("voice", r)}
-        />
-
-        {launchGate ? (
-          <TestConnectionButton
-            testID="provider-launch-gate-verify"
-            label="检测全部并继续"
-            themeMode={mode}
-            onTest={async () => {
-              const gate = await runLaunchGateVerification();
-              return gate.verification.verified
-                ? { status: "live" as const, hint: "主界面已解锁" }
-                : {
-                    status: "error" as const,
-                    code: "PROVIDER_GATE_BLOCKED",
-                    hint: "需要 ModelScope 与豆包语音均 live 成功",
-                  };
-            }}
-            onResult={() => undefined}
-          />
-        ) : null}
+        <UniversalProviderSettings />
 
         <Text style={[styles.sectionTitle, { color: theme.text }]}>新闻与趋势</Text>
         <ProviderConnectionRow

@@ -1,4 +1,4 @@
-﻿import { readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -20,17 +20,6 @@ function parseVisualFixtureCaptureRoute(url: string | null | undefined): string 
   if (!route || !allowed.has(route)) return null;
   return route;
 }
-
-const registry = JSON.parse(
-  readFileSync(join(root, "app-development/specs/visual-fixtures/companion-registry.json"), "utf8"),
-) as {
-  screens: Array<{
-    screenId: string;
-    keywords: string[];
-    referenceScreen: string | null;
-    baselinePng: string;
-  }>;
-};
 
 const MOBILE_SOURCE_MAP: Record<string, string[]> = {
   "ui-02-splash": ["apps/mobile/screens/LaunchScreen.tsx"],
@@ -68,35 +57,19 @@ function readSources(paths: string[]): string {
     .join("\n");
 }
 
-describe("companion visual keyword gate", () => {
-  it("registry defines 18 screens", () => {
-    expect(registry.screens).toHaveLength(18);
+describe("checked-in visual capture manifest", () => {
+  it("defines unique capture routes and valid deep links for all 18 screens", () => {
+    const manifest = JSON.parse(readFileSync(join(root, "apps/mobile/visual-fixtures/manifest.json"), "utf8")) as {
+      screens: Array<{ screenId: string; captureRoute: string; testID: string | null; deepLink?: string }>;
+    };
+    expect(manifest.screens).toHaveLength(18);
+    expect(new Set(manifest.screens.map((screen) => screen.screenId)).size).toBe(18);
+    expect(new Set(manifest.screens.map((screen) => screen.captureRoute)).size).toBe(18);
+    for (const screen of manifest.screens.filter((screen) => screen.testID !== null)) {
+      expect(parseVisualFixtureCaptureRoute(screen.deepLink)).toBe(screen.captureRoute);
+    }
   });
-
-  for (const screen of registry.screens) {
-    it(`${screen.screenId} keywords are non-empty when configured`, () => {
-      if (screen.keywords.length === 0) {
-        expect(screen.keywords).toEqual([]);
-        return;
-      }
-      expect(screen.keywords.every((k) => k.length > 0)).toBe(true);
-    });
-
-    it(`${screen.screenId} keyword gate against reference, mobile, or SVG contract`, () => {
-      if (screen.keywords.length === 0) return;
-
-      const mobilePaths = MOBILE_SOURCE_MAP[screen.screenId] ?? [];
-      const referencePath = screen.referenceScreen ? [screen.referenceScreen] : [];
-      const svgPath = screen.baselinePng.replace(/\.png$/, ".svg");
-      const haystack = readSources([...mobilePaths, ...referencePath, svgPath]);
-
-      expect(haystack.trim().length).toBeGreaterThan(0);
-      const hits = screen.keywords.filter((keyword) => haystack.includes(keyword));
-      expect(hits.length).toBeGreaterThan(0);
-    });
-  }
 });
-
 describe("companion visual manifest testID contract (CK-08)", () => {
   const manifest = JSON.parse(
     readFileSync(join(root, "apps/mobile/visual-fixtures/manifest.json"), "utf8"),

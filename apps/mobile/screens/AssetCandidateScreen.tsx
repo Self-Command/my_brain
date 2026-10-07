@@ -188,7 +188,6 @@ export function AssetCandidateScreen({
         <View style={styles.actions}>
           <PrimaryPill
             label="入库"
-            active
             onPress={handleConfirm}
             testID="asset-candidate-confirm"
           />

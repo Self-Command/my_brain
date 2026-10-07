@@ -15,6 +15,7 @@ import { createMockRealtimePlaybackQueue } from "./mockRealtimeTransport";
 function testDeps() {
   return {
     deviceId: "barge-in-test",
+    voiceSettings: { providerId: "mock", voiceModel: "mock", region: "" },
     tokenStore: createMemorySecureTokenStore(),
     micPermission: createMemoryMicrophonePermissionPort("granted"),
     skipMicPermissionCheck: true,

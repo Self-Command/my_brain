@@ -16,6 +16,7 @@ export interface DeviceAudioIoPort {
   interruptPlayback(): void;
   isPlaying(): boolean;
   onPlaybackStateChange(cb: (playing: boolean) => void): () => void;
+  onError?(cb: (message: string) => void): () => void;
 }
 
 function createMockAudioIoPort(mode: DeviceAudioIoMode): DeviceAudioIoPort {

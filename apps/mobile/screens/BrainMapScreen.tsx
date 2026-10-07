@@ -111,7 +111,7 @@ export function BrainMapScreen() {
         <View style={styles.fixtureHeader} testID="brain-map-header">
           <View style={styles.fixtureHeaderText}>
             <Text
-              style={[styles.fixtureTitle, { color: theme.text }]}
+              style={[{ includeFontPadding: false }, styles.fixtureTitle, { color: theme.text }]}
               testID="brain-map-header-title"
               accessibilityRole="header"
             >
@@ -121,7 +121,7 @@ export function BrainMapScreen() {
               {FIXTURE_VOICE_CTA}
             </Text>
             <Text
-              style={[styles.fixtureSubtitle, { color: theme.textSecondary }]}
+              style={[{ includeFontPadding: false }, styles.fixtureSubtitle, { color: theme.textSecondary }]}
               testID="brain-map-header-subtitle"
             >
               探索你已经确认留下的知识，不看临时噪音。
@@ -154,7 +154,7 @@ export function BrainMapScreen() {
           accessibilityLabel="显示已归档"
           accessibilityState={{ selected: showArchived }}
         >
-          <Text style={[styles.archivedToggleText, { color: theme.textSecondary }]}>
+          <Text style={[{ includeFontPadding: false }, styles.archivedToggleText, { color: theme.textSecondary }]}>
             显示已归档
           </Text>
         </Pressable>
@@ -163,10 +163,10 @@ export function BrainMapScreen() {
       <View style={styles.mapArea} testID="brain-map-viewport">
         {isEmpty ? (
           <View style={styles.empty} testID="brain-map-empty">
-            <Text style={[styles.emptyTitle, { color: theme.text }]}>
+            <Text style={[{ includeFontPadding: false }, styles.emptyTitle, { color: theme.text }]}>
               星图还空着
             </Text>
-            <Text style={[styles.emptyBody, { color: theme.textSecondary }]}>
+            <Text style={[{ includeFontPadding: false }, styles.emptyBody, { color: theme.textSecondary }]}>
               确认入库的概念会在这里亮起；归档的概念可随时恢复，不会真删。
             </Text>
           </View>
@@ -195,15 +195,14 @@ export function BrainMapScreen() {
             ]}
             testID="node-detail-sheet"
           >
-            <Text includeFontPadding={false} style={[styles.fixtureKicker, mapVisualCapture && styles.fixtureKickerCapture, { color: theme.primary }]} testID="node-detail-sheet-kicker">
+            <Text style={[{ includeFontPadding: false }, styles.fixtureKicker, mapVisualCapture && styles.fixtureKickerCapture, { color: theme.primary }]} testID="node-detail-sheet-kicker">
               你点亮的概念
             </Text>
-            <Text includeFontPadding={false} style={[styles.fixtureConcept, { color: theme.text }]} testID="node-detail-sheet-concept">
+            <Text style={[{ includeFontPadding: false }, styles.fixtureConcept, { color: theme.text }]} testID="node-detail-sheet-concept">
               {detail.node.concept}
             </Text>
             <Text
-              includeFontPadding={false}
-              style={[styles.fixtureIntro, { color: theme.textSecondary }]}
+              style={[{ includeFontPadding: false }, styles.fixtureIntro, { color: theme.textSecondary }]}
               numberOfLines={mapVisualCapture ? 3 : 2}
               testID="node-detail-sheet-intro"
             >
@@ -211,22 +210,22 @@ export function BrainMapScreen() {
               ? "把模型、语音、信息源都藏在可替换接口后面，\n避免产品绑定厂商。"
               : detail.node.intro}
             </Text>
-            <Text style={[styles.fixtureMeta, mapVisualCapture && styles.fixtureMetaCapture, { color: theme.textTertiary }]} testID="node-detail-sheet-meta">
+            <Text style={[{ includeFontPadding: false }, styles.fixtureMeta, mapVisualCapture && styles.fixtureMetaCapture, { color: theme.textTertiary }]} testID="node-detail-sheet-meta">
               来源 3 · 关系 7 · 最近整理 2 次
             </Text>
             <View style={[styles.fixtureActions, mapVisualCapture && styles.fixtureActionsCapture]} testID="node-detail-sheet-actions">
               <View
                 style={[styles.fixtureActionPill, styles.fixtureActionPrimary, { backgroundColor: "#7B8CFF22" }]}
               >
-                <Text style={[styles.fixtureActionText, { color: theme.primary }]} testID="node-detail-sheet-action-explain">
+                <Text style={[{ includeFontPadding: false }, styles.fixtureActionText, { color: theme.primary }]} testID="node-detail-sheet-action-explain">
                   多说点
                 </Text>
               </View>
               <View style={[styles.fixtureActionPill, { backgroundColor: theme.surfaceMuted }]}>
-                <Text style={[styles.fixtureActionText, { color: theme.textTertiary }]}>考考我</Text>
+                <Text style={[{ includeFontPadding: false }, styles.fixtureActionText, { color: theme.textTertiary }]}>考考我</Text>
               </View>
               <View style={[styles.fixtureActionPill, { backgroundColor: theme.surfaceMuted }]}>
-                <Text style={[styles.fixtureActionText, { color: theme.textTertiary }]}>看历史</Text>
+                <Text style={[{ includeFontPadding: false }, styles.fixtureActionText, { color: theme.textTertiary }]}>看历史</Text>
               </View>
             </View>
           </View>
@@ -247,7 +246,7 @@ export function BrainMapScreen() {
           accessibilityRole="button"
           accessibilityLabel="已归档"
         >
-          <Text style={[styles.bottomPillText, { color: theme.text }]}>已归档</Text>
+          <Text style={[{ includeFontPadding: false }, styles.bottomPillText, { color: theme.text }]}>已归档</Text>
         </Pressable>
         <Pressable
           style={[
@@ -262,7 +261,7 @@ export function BrainMapScreen() {
           accessibilityLabel="关系视图"
         >
           <Text
-            style={[
+            style={[{ includeFontPadding: false }, 
               styles.bottomPillText,
               { color: viewMode === "relations" ? theme.primary : theme.text },
             ]}
@@ -278,7 +277,7 @@ export function BrainMapScreen() {
           accessibilityLabel="搜索节点（演示占位）"
           accessibilityState={{ disabled: true }}
         >
-          <Text style={[styles.bottomPillText, { color: theme.textTertiary }]}>搜索节点</Text>
+          <Text style={[{ includeFontPadding: false }, styles.bottomPillText, { color: theme.textTertiary }]}>搜索节点</Text>
         </Pressable>
       </View>
 
