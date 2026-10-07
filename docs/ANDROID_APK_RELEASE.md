@@ -3,6 +3,9 @@
 所有类型检查、测试、编译、模拟器验证和发布由 GitHub Actions 执行。
 `Provider Config Validation` 在开发分支推送、PR、main 或手动触发时检查；
 通过 gate 后，同一 SHA 调用 `Android APK Release` 构建和验证。
+2026-10-07 用户要求立即发布并自行测试交互：默认跳过模拟器交互门槛，
+`verify_interaction` 可显式开启；代码检查、签名、内嵌 JS、敏感值和 SHA 门槛保留。
+首次即时发布由 `Publish Provider Test APK` 在 Actions 使用已有验证 APK artifact 完成。
 main 成功通过门槛后发布 GitHub Prerelease；开发分支默认保留 artifact。
 手动发布可在 Provider Config Validation 勾选 publish，或在 Android APK Release
 填写同一 SHA 的成功 validation_run 并勾选 publish。SHA 不一致会失败。
@@ -35,8 +38,8 @@ main 成功通过门槛后发布 GitHub Prerelease；开发分支默认保留 ar
 5. 先验证 Android JavaScript 打包，再使用已提交的 Android 工程运行
    `assembleRelease`，保留原生模块、权限及备份规则。
 6. 验证 APK 与旧包签名、递增版本、应用 ID、内嵌 Hermes JS 和敏感值，计算 SHA-256。
-7. Actions Android API 35 模拟器安装旧包、填写配置、覆盖升级并检查保存 / 重启 / 迁移。
-   Maestro 固定 CLI 2.11.0 并校验下载 SHA256；失败阻断发布。
+7. 可选 Actions Android API 35 模拟器覆盖升级检查，默认由用户亲自测试交互。
+   显式启用时 Maestro 固定 CLI 2.11.0 并校验下载 SHA256；失败阻断该次发布。
 8. 独立发布 job 用 `contents: write` 发布 Prerelease，附 APK、哈希、验证报告与已知限制。
 
 Prerelease 不更新 `releases/latest`，请从具体发布页下载。版本码按 Actions 构建时间
@@ -46,4 +49,4 @@ Prerelease 不更新 `releases/latest`，请从具体发布页下载。版本码
 
 真实麦克风、回声、蓝牙、来电、声学打断 P50 < 300 ms 和 iOS 未验收，
 标为 NOT_RUN / NOT_TESTED，不阻断本次测试版。真实账号权限需应用内验证。
-原来的独立 push 发布入口已替换，不能仅凭 APK 编译成功绕过测试和模拟器门槛。
+原来的独立 push 发布入口已替换，不能仅凭 APK 编译成功绕过代码与包检查门槛。

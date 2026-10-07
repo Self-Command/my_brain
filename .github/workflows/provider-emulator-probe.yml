@@ -1,8 +1,5 @@
 name: Provider Emulator Diagnostics
 on:
-  push:
-    branches: ['codex/provider-config-port']
-    paths: ['.github/workflows/provider-emulator-probe.yml', 'tools/provider-config-ci/emulator-smoke.sh', 'tools/provider-config-ci/*settings.yaml']
   workflow_dispatch:
     inputs:
       apk_run:

@@ -8,6 +8,9 @@ on:
       publish:
         type: boolean
         default: false
+      verify_interaction:
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -79,4 +82,5 @@ jobs:
     uses: ./.github/workflows/android-apk-release.yml
     with:
       validation_run: ${{ format('{0}', github.run_id) }}
+      verify_interaction: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_interaction || false }}
       publish: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || github.event_name == 'push' && github.ref == 'refs/heads/main' }}

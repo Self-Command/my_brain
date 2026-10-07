@@ -5,12 +5,19 @@ on:
       publish:
         type: boolean
         default: false
+      verify_interaction:
+        type: boolean
+        default: false
       validation_run:
         type: string
         required: true
   workflow_dispatch:
     inputs:
       publish:
+        type: boolean
+        default: false
+      verify_interaction:
+        description: Optional emulator interaction checks (user testing by default)
         type: boolean
         default: false
       validation_run:
@@ -95,6 +102,7 @@ jobs:
           if-no-files-found: error
   emulator:
     needs: build
+    if: inputs.verify_interaction
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
@@ -139,7 +147,7 @@ jobs:
           if-no-files-found: error
   release:
     needs: [build, emulator]
-    if: inputs.publish && github.event_name != 'pull_request'
+    if: always() && inputs.publish && github.event_name != 'pull_request' && needs.build.result == 'success' && (needs.emulator.result == 'success' || needs.emulator.result == 'skipped')
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -149,6 +157,7 @@ jobs:
           name: android-apk
           path: apk-release
       - uses: actions/download-artifact@v4
+        if: inputs.verify_interaction
         with:
           name: android-emulator-verification
           path: emulator-evidence
@@ -158,13 +167,18 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           TAG="provider-config-0.2.${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          cp emulator-evidence/emulator-verification.json apk-release/
+          if [ '${{ inputs.verify_interaction }}' = 'true' ]; then
+            cp emulator-evidence/emulator-verification.json apk-release/
+          else
+            printf '{"sha":"%s","status":"NOT_REQUIRED_FOR_TEST_RELEASE","reason":"User requested personal interaction testing"}\n' "$GITHUB_SHA" > apk-release/interaction-verification.json
+          fi
           cat > release-notes.md <<EOF
           通用配置测试版：OpenAI 兼容 LLM、OpenAI Speech PCM TTS、MiMo 音频 Chat 协议，以及保留的豆包实时会话。
 
           下载 my-brain-android.apk 可覆盖安装此前版本，沿用应用 ID 和原签名。密钥由用户填写并保存在本机 SecureStore。
 
-          - 移动端、共享核心、本次功能检查及 Android 模拟器安装升级检查通过后才发布。
+          - 移动端、共享核心、本次功能检查及 APK 签名/内嵌 JS/敏感值扫描通过后发布。
+          - 按用户要求默认不运行交互验收，由用户安装测试；模拟器交互是显式可选项，附件准确记录是否执行。
           - 完整仓库的基线遗留失败详见 provider-verification.json；新增回归阻断发布。
           - 真机麦克风、回声、蓝牙、来电、声学打断 P50 和 iOS 未验收。协议测试使用合成测试数据，真实账号调用权限需应用内验证。
           - 首批 TTS 要求 PCM16LE 单声道 24 kHz；其他私有协议需要新增适配器。

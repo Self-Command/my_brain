@@ -2,6 +2,8 @@
 
 2026-10-07 · 用户批准的移动测试版范围。所有类型检查、测试、Expo 导出、Gradle 构建、APK 检查、模拟器验证和发布均在 GitHub Actions；本机仅编辑、阅读与 Git 操作。
 
+用户后续明确要求立即发布现有测试包，自行验证交互并反馈，因此交互不再是本次发布前置门槛。`Publish Provider Test APK` 在 Actions 下载已通过代码与包检查的 artifact，核对报告 SHA 与 APK SHA、签名和 SHA256 后直接发布 Prerelease；发布目标为 APK 实际源码提交，不能使用发布脚本提交替代包来源。后续 Android 流程默认跳过交互，可显式启用。
+
 ## 实际模块
 
 | 模块 | 职责 |
