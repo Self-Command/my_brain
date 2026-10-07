@@ -78,6 +78,9 @@ export interface VoiceSessionDeps {
   tokenRefreshScheduler?: TokenRefreshScheduler;
   skipMicPermissionCheck?: boolean;
   onIntent?: (intent: UserIntent) => string | void;
+  onAsyncIntent?: (intent: UserIntent, signal: AbortSignal) => Promise<string | void>;
+  onFreeformTranscript?: (text: string, signal: AbortSignal) => Promise<string>;
+  isAwaitingConfirmation?: () => boolean;
   onDegradedVoice?: (reason: "token_exchange" | "transport" | "permission" | "offline") => void;
   onClearDegradedVoice?: () => void;
 }
@@ -132,6 +135,12 @@ function resolveVoiceSettings(deps: VoiceSessionDeps): VoiceProviderConfig {
 }
 
 export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessionController {
+  const composed = resolveVoiceSettings(deps).providerId === "composed";
+  let replyAbort: AbortController | null = null;
+  let replyEpoch = 0;
+  let lastAssistantText = "";
+  let speakStartedMs = 0;
+  const cancelReply = () => { replyEpoch++; replyAbort?.abort(); replyAbort = null; };
   let snapshot = createInitialVoiceSnapshot();
   let connected = false;
   let activeTransport: VoiceRealtimeTransport | null = null;
@@ -152,6 +161,12 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
     deviceSttActive = true;
     await startDeviceStt((transcript) => {
       handleTranscriptInternal(transcript);
+    }, (partial) => {
+      if (!composed || !playback.isPlaying()) return;
+      if (partial && lastAssistantText.includes(partial.trim())) return;
+      if (!partial && Date.now() - speakStartedMs < 150) return;
+      cancelReply(); playback.interruptPlayback();
+      applyEvent({ type: "barge_in" }); applyEvent({ type: "start_listening" }); notify();
     });
   };
 
@@ -191,7 +206,7 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
 
   playback.onPlaybackStateChange((playing) => {
     if (playing) {
-      void stopDeviceListening();
+      if (!composed) void stopDeviceListening();
       return;
     }
     if (snapshot.state === "speaking") {
@@ -204,8 +219,10 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
   });
 
   audioInterrupt.subscribe(() => {
+    if (composed && audioInterrupt.shouldPauseTts()) { cancelReply(); playback.interruptPlayback(); }
     pausePlaybackIfNeeded();
   });
+  playback.onError?.((message) => { cancelReply(); applyEvent({ type: "transport_error", message }); deps.onDegradedVoice?.("transport"); notify(); });
 
   const enqueueAssistantReply = (reply: string) => {
     if (audioInterrupt.shouldPauseTts()) {
@@ -216,7 +233,8 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
       return;
     }
     applyEvent({ type: "assistant_reply_start" });
-    void stopDeviceListening();
+    lastAssistantText = trimmed; speakStartedMs = Date.now();
+    if (!composed) void stopDeviceListening();
     if (playback.speakText) {
       playback.speakText(trimmed);
     } else {
@@ -241,6 +259,10 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
         const trimmed = transcript.trim();
         if (!trimmed) {
           return;
+        }
+        if (deps.isAwaitingConfirmation?.() && resolveVoiceTranscript(trimmed, 1).kind === "intent") {
+          const resolved = resolveVoiceTranscript(trimmed, 1);
+          if (resolved.kind === "intent") deps.onIntent?.(resolved.intent);
         }
         applyEvent({ type: "user_utterance_end" });
         notify();
@@ -267,7 +289,9 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
       return null;
     }
     if (snapshot.state === "speaking" || playback.isPlaying()) {
-      return null;
+      if (!composed || lastAssistantText.includes(transcript.trim())) return null;
+      cancelReply(); playback.interruptPlayback();
+      applyEvent({ type: "barge_in" }); applyEvent({ type: "start_listening" });
     }
     const trimmed = transcript.trim();
     if (!trimmed) {
@@ -281,6 +305,17 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
     lastTranscriptAtMs = nowMs;
     applyEvent({ type: "user_utterance_end" });
     const resolved = resolveVoiceTranscript(transcript, attempt ?? ingestAttempt);
+    if (composed && (resolved.kind === "reprompt" || !deps.isAwaitingConfirmation?.()) && deps.onFreeformTranscript) {
+      if (!deps.isAwaitingConfirmation?.() && resolved.kind === "intent" && resolved.intent === "explain_more") {
+        // Known commands still use the existing intent dispatcher below.
+      } else if (!deps.isAwaitingConfirmation?.()) {
+        cancelReply(); const epoch = replyEpoch; const controller = new AbortController(); replyAbort = controller;
+        void deps.onFreeformTranscript(trimmed, controller.signal).then((reply) => {
+          if (connected && epoch === replyEpoch && !controller.signal.aborted) enqueueAssistantReply(reply);
+        }).catch(() => { if (connected && epoch === replyEpoch) { applyEvent({ type: "transport_error", message: "语言模型回复失败，请检查连接" }); notify(); } });
+        notify(); return null;
+      }
+    }
     if (resolved.kind === "reprompt") {
       ingestAttempt = 2;
       applyEvent({ type: "start_listening" });
@@ -288,6 +323,13 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
       return "reprompt";
     }
     ingestAttempt = 1;
+    if (composed && deps.onAsyncIntent) {
+      cancelReply(); const epoch = replyEpoch; const controller = new AbortController(); replyAbort = controller;
+      void deps.onAsyncIntent(resolved.intent, controller.signal).then((reply) => {
+        if (connected && epoch === replyEpoch && !controller.signal.aborted && typeof reply === "string") enqueueAssistantReply(reply);
+      }).catch(() => { if (epoch === replyEpoch) { applyEvent({ type: "transport_error", message: "回复失败" }); notify(); } });
+      notify(); return resolved.intent;
+    }
     const assistantReply = deps.onIntent?.(resolved.intent);
     if (typeof assistantReply === "string" && assistantReply.trim()) {
       enqueueAssistantReply(assistantReply);
@@ -306,6 +348,11 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
     });
     tokenRefreshScheduler.schedule(token.expiresAt, async () => {
       try {
+        if (composed) {
+          if (!hasVoiceKey) throw new Error("TTS 凭据未配置");
+          connected = true; usesDeviceStt = true; usesDoubaoS2S = false;
+          await startDeviceListening(); applyEvent({ type: "start_listening" }); deps.onClearDegradedVoice?.(); notify(); return;
+        }
         await storeTokenAndScheduleRefresh();
         deps.onClearDegradedVoice?.();
       } catch {
@@ -486,6 +533,7 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
       }
     },
     disconnect() {
+      cancelReply();
       connected = false;
       hasVoiceKey = false;
       usesDeviceStt = false;
@@ -526,7 +574,7 @@ export function createVoiceSessionController(deps: VoiceSessionDeps): VoiceSessi
       if (snapshot.state !== "speaking") {
         return;
       }
-      activeTransport?.bargeInPlayback?.();
+      cancelReply(); activeTransport?.bargeInPlayback?.();
       playback.interruptPlayback();
       applyEvent({ type: "barge_in" });
       applyEvent({ type: "start_listening" });

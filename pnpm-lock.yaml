@@ -141,6 +141,9 @@ importers:
       android-share-intent:
         specifier: file:./modules/android-share-intent
         version: file:apps/mobile/modules/android-share-intent
+      provider-http:
+        specifier: file:./modules/provider-http
+        version: file:apps/mobile/modules/provider-http
       expo:
         specifier: ~52.0.46
         version: 52.0.49(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(react-native@0.76.9(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.29)(react@18.3.1))(react@18.3.1)
@@ -1938,6 +1941,9 @@ packages:
 
   android-share-intent@file:apps/mobile/modules/android-share-intent:
     resolution: {directory: apps/mobile/modules/android-share-intent, type: directory}
+
+  provider-http@file:apps/mobile/modules/provider-http:
+    resolution: {directory: apps/mobile/modules/provider-http, type: directory}
 
   anser@1.4.10:
     resolution: {integrity: sha512-hCv9AqTQ8ycjpSd3upOJd7vFwW1JaoYQ7tpham03GJ1ca8/65rqn0RpaWpItOAd6ylW9wAw6luXYPJIyPFVOww==}
@@ -7232,6 +7238,8 @@ snapshots:
       uri-js: 4.4.1
 
   android-share-intent@file:apps/mobile/modules/android-share-intent: {}
+
+  provider-http@file:apps/mobile/modules/provider-http: {}
 
   anser@1.4.10: {}
 

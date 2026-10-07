@@ -211,7 +211,6 @@ export function CaptureInboxScreen() {
         sections={sections}
         pendingCount={displayPendingCount}
         themeMode={themeMode}
-        visualFixture={inboxVisualCapture}
         onProposeIngest={handleProposeIngest}
         onKeepPending={handleKeepPending}
         onDiscard={handleDiscard}

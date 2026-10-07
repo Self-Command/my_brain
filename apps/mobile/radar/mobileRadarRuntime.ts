@@ -5,13 +5,13 @@ import type {
   UserModeProfile,
 } from "@my-brain/core";
 import {
-  createDeepSeekLlmProvider,
+  createConfiguredLlmProvider as createCoreConfiguredLlmProvider,
   createMockLlmProvider,
-  createOpenAiCompatibleLlmProvider,
   fetchLiveRadarSignals,
 } from "@my-brain/core";
 
 import { getSecureCredentialStore, type SecureCredentialStore } from "../services/secureCredentialStore";
+import { providerFetch } from "../services/providerHttp";
 import {
   loadProviderSettings,
   type LlmConnectionFetch,
@@ -42,7 +42,7 @@ function resolveRadarFetch(explicit?: RadarFetch): RadarFetch {
     return explicit;
   }
   if (typeof globalThis.fetch === "function") {
-    return globalThis.fetch.bind(globalThis) as RadarFetch;
+    return providerFetch;
   }
   return async () => {
     throw new Error("fetch unavailable");
@@ -54,19 +54,7 @@ function createConfiguredLlmProvider(
   apiKey: string,
   fetchImpl: RadarFetch,
 ): LlmProvider {
-  const config = {
-    apiKey,
-    baseUrl: settings.endpoint.trim() || undefined,
-    model: settings.model.trim() || undefined,
-    fetch: fetchImpl as LlmConnectionFetch,
-  };
-  if (settings.providerId === "deepseek") {
-    return createDeepSeekLlmProvider(config);
-  }
-  return createOpenAiCompatibleLlmProvider({
-    ...config,
-    baseUrl: settings.endpoint.trim(),
-  });
+  return createCoreConfiguredLlmProvider(settings, apiKey, fetchImpl as LlmConnectionFetch);
 }
 
 export async function resolveMobileRadarSignals(

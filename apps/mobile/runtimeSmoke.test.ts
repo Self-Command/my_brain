@@ -23,7 +23,7 @@ describe("S13 runtime smoke matrix", () => {
     const evidence = buildS13MockDeviceEvidence();
     for (const item of evidence) {
       expect(item.source).toBe("mock");
-      expect(item.simulatedResult).toBe("PASS");
+      expect(item.result).toBe("NOT_RUN");
       expect(item.replaceWithRealDeviceEvidence).toBe(true);
       expect(item.artifactPaths[0]).toContain(`S13-${item.platform}-smoke`);
       expect(JSON.stringify(item).toLowerCase()).not.toContain('"source":"real"');

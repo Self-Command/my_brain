@@ -20,6 +20,7 @@ const result = {
   requiredFailures, unexpected,
   knownLegacyFailures: fullFailures.filter((name) => name.startsWith("src/") && oldFailures.has(name)),
   device: { microphone: "NOT_RUN", acousticBargeIn: "NOT_RUN", bluetooth: "NOT_RUN", phoneCall: "NOT_RUN", ios: "NOT_TESTED" },
+  visualReferenceComparison: { status: "NOT_RUN", reason: "Upstream does not contain referenced companion-registry.json or SVG baselines; checked-in capture routes and theme contracts are validated instead." },
 };
 writeFileSync("reports/verification.json", JSON.stringify(result, null, 2));
 appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Provider validation: ${result.status}\n\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\`\n`);

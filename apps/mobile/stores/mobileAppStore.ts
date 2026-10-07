@@ -149,7 +149,7 @@ function degradedAfterVerification(
   verification: ProviderVerificationState,
   state: Pick<MobileAppState, "hasApiKey" | "coldStartComplete" | "providerStatus" | "degraded">,
 ): DegradedModeState {
-  if (verification.verified) {
+  if (verification.verified && verification.voiceLive) {
     return { active: [], providerMode: "live" };
   }
   let active = state.degraded.active.filter(
@@ -165,7 +165,7 @@ function degradedAfterVerification(
   const providerStatus: ProviderConfigSnapshot = {
     ...state.providerStatus,
     llm: verification.llmLive ? "live" : state.providerStatus.llm,
-    voice: verification.voiceLive ? "connected" : state.providerStatus.voice,
+    voice: verification.voiceLive ? "connected" : "disconnected",
   };
   return deriveDegradedFromProviderSnapshot(
     providerStatus,
@@ -292,7 +292,7 @@ export const useMobileAppStore = create<MobileAppState>((set, get) => ({
     const providerStatus: ProviderConfigSnapshot = {
       ...state.providerStatus,
       llm: verification.llmLive ? "live" : state.providerStatus.llm,
-      voice: verification.voiceLive ? "connected" : state.providerStatus.voice,
+      voice: verification.voiceLive ? "connected" : "disconnected",
     };
     const degraded = degradedAfterVerification(verification, {
       ...state,

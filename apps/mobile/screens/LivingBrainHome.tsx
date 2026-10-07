@@ -62,7 +62,7 @@ export function LivingBrainHome() {
   const openCompanionChat = useMobileAppStore((s) => s.openCompanionChat);
   const assetCandidateTargetId = useMobileAppStore((s) => s.assetCandidateTargetId);
   const pendingCount = useProvisionalStore((s) => s.listPending().length);
-  const { conversation, dispatchIntent, focusSignal, confirmPendingIngest } =
+  const { conversation, dispatchIntent, dispatchVoiceIntent, focusSignal, confirmPendingIngest } =
     useConversationSession();
   const { navigate } = useNavigation();
   const { mode: themeMode, colors: themeColors } = useTheme();
@@ -274,10 +274,11 @@ export function LivingBrainHome() {
 
   const voiceDisconnected = degraded.active.includes("voice_disconnected");
   const voiceSessionEnabled =
-    !voiceDisconnected && (isAdaptiveLive || providerVoiceLive);
+    !voiceDisconnected && providerVoiceLive;
   const livingBrainVoice = useLivingBrainVoiceOrb({
     enabled: voiceSessionEnabled,
     dispatchIntent,
+    dispatchVoiceIntent,
   });
   const voiceOrbState = voiceSessionEnabled
     ? livingBrainVoice.orbState

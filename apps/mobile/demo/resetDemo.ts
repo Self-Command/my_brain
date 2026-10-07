@@ -35,7 +35,7 @@ export function resetDemo(options: ResetDemoOptions = {}): ResetDemoResult {
     const result = resetDemoStorage(session.storage, options);
     return { ...result, dbPath };
   } finally {
-    session.driver.close();
+    session.driver.close?.();
   }
 }
 

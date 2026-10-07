@@ -2,7 +2,7 @@ import Voice, { type SpeechResultsEvent } from "@react-native-voice/voice";
 
 let active = false;
 
-export async function startDeviceStt(onTranscript: (text: string) => void): Promise<void> {
+export async function startDeviceStt(onTranscript: (text: string) => void, onSpeechActivity?: (partial?: string) => void): Promise<void> {
   await stopDeviceStt();
   Voice.onSpeechResults = (event: SpeechResultsEvent) => {
     const text = event.value?.[0]?.trim();
@@ -10,6 +10,8 @@ export async function startDeviceStt(onTranscript: (text: string) => void): Prom
       onTranscript(text);
     }
   };
+  Voice.onSpeechStart = () => { if (active) onSpeechActivity?.(); };
+  Voice.onSpeechPartialResults = (event: SpeechResultsEvent) => { if (active) onSpeechActivity?.(event.value?.[0]); };
   Voice.onSpeechEnd = () => {
     if (active) {
       void Voice.start("zh-CN").catch(() => undefined);

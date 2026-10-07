@@ -1,7 +1,5 @@
 import {
-  createDeepSeekLlmProvider,
-  createModelScopeLlmProvider,
-  createOpenAiCompatibleLlmProvider,
+  createConfiguredLlmProvider,
   DEFAULT_MODELSCOPE_MODEL,
   testDoubaoVoiceConnection,
   type DoubaoWebSocketConstructor,
@@ -15,6 +13,8 @@ import {
 } from "../voice/realtimeVoiceTransport";
 import { getStorageSession } from "../storage/storageSession";
 import { validateProviderHttpsUrl } from "./providerUrlValidation";
+import { activeProfile, loadProviderProfiles, profileReadiness, saveProviderProfiles } from "./providerProfiles";
+import { providerFetch } from "./providerHttp";
 
 /** Matches packages/core openAiCompatibleClient LlmFetch — injected in tests. */
 export type LlmConnectionFetch = (
@@ -138,6 +138,14 @@ function mergeSettings(partial: Partial<ProviderSettingsConfig>): ProviderSettin
 }
 
 export function loadProviderSettings(): ProviderSettingsConfig {
+  const profiles = loadProviderProfiles();
+  if (profiles) {
+    const llm = activeProfile(profiles, "llm");
+    const voice = activeProfile(profiles, "voice");
+    return { llm: { providerId: "openai-compatible", endpoint: llm?.baseUrl ?? "", model: llm?.modelId ?? "" },
+      voice: { providerId: profiles.voiceSelection.mode === "realtime" ? "doubao-volc" : "composed", voiceModel: voice?.modelId ?? "", appId: voice?.appId, region: voice?.region ?? "" },
+      radar: profiles.radar, tokenExchange: profiles.tokenExchange, executionApi: profiles.executionApi };
+  }
   const session = getStorageSession();
   const raw = session?.storage.getMeta(PROVIDER_SETTINGS_META_KEY);
   if (!raw) {
@@ -152,11 +160,18 @@ export function loadProviderSettings(): ProviderSettingsConfig {
 }
 
 export function saveProviderSettings(config: ProviderSettingsConfig): void {
+  const profiles = loadProviderProfiles();
+  if (profiles) {
+    saveProviderProfiles({ ...profiles, radar: config.radar, tokenExchange: config.tokenExchange, executionApi: config.executionApi });
+    return;
+  }
   const session = getStorageSession();
   session?.storage.setMeta(PROVIDER_SETTINGS_META_KEY, JSON.stringify(config));
 }
 
 export function loadProviderVerification(): ProviderVerificationState {
+  const profiles = loadProviderProfiles();
+  if (profiles) return profileReadiness(profiles);
   const session = getStorageSession();
   const raw = session?.storage.getMeta(PROVIDER_VERIFICATION_META_KEY);
   if (!raw) {
@@ -187,7 +202,7 @@ export function evaluateProviderGateResults(
 ): ProviderVerificationState {
   const llmLive = llm.status === "live";
   const voiceLive = voice.status === "live";
-  const verified = llmLive && voiceLive;
+  const verified = llmLive;
   return {
     verified,
     llmLive,
@@ -197,7 +212,7 @@ export function evaluateProviderGateResults(
 }
 
 export function selectMainRouteEnabled(verification: ProviderVerificationState): boolean {
-  return verification.verified && verification.llmLive && verification.voiceLive;
+  return verification.verified && verification.llmLive;
 }
 
 export function appendProviderConfigAudit(
@@ -243,7 +258,7 @@ function resolveLlmFetch(fetch?: LlmConnectionFetch): LlmConnectionFetch {
     return fetch;
   }
   if (typeof globalThis.fetch === "function") {
-    return globalThis.fetch.bind(globalThis) as LlmConnectionFetch;
+    return providerFetch;
   }
   throw new Error("fetch is unavailable for LLM connection test");
 }
@@ -280,30 +295,7 @@ function createLlmProviderForTest(
   apiKey: string,
   fetchImpl: LlmConnectionFetch,
 ) {
-  const trimmedKey = apiKey.trim();
-  if (settings.providerId === "modelscope") {
-    return createModelScopeLlmProvider({
-      apiKey: trimmedKey,
-      baseUrl: settings.endpoint.trim() || undefined,
-      model: settings.model.trim() || undefined,
-      fetch: fetchImpl,
-    });
-  }
-  const isDeepSeek = settings.providerId === "deepseek";
-  if (isDeepSeek) {
-    return createDeepSeekLlmProvider({
-      apiKey: trimmedKey,
-      baseUrl: settings.endpoint.trim() || undefined,
-      model: settings.model.trim() || undefined,
-      fetch: fetchImpl,
-    });
-  }
-  return createOpenAiCompatibleLlmProvider({
-    apiKey: trimmedKey,
-    baseUrl: settings.endpoint.trim(),
-    model: settings.model.trim() || undefined,
-    fetch: fetchImpl,
-  });
+  return createConfiguredLlmProvider(settings, apiKey, fetchImpl);
 }
 
 export async function testLlmConnection(

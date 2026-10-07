@@ -806,3 +806,7 @@ export type {
   ShowcaseStepContract,
 } from "../demo/index.js";
 
+export * from "./providers/serviceConfig.js";
+export * from "./providers/serviceCatalog.js";
+export * from "./providers/ttsProtocol.js";
+export { createOpenAiCompatibleCompletion, type OpenAiCompatibleMessage } from "./providers/openAiCompatibleClient.js";

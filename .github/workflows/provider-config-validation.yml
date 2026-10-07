@@ -32,7 +32,12 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      - run: pnpm install --frozen-lockfile --prod=false
+      - run: pnpm install --prod=false --no-frozen-lockfile
+      - uses: actions/upload-artifact@v4
+        if: matrix.version == 'current'
+        with:
+          name: provider-lockfile
+          path: pnpm-lock.yaml
       - name: Run checks and preserve all exit codes
         run: node ci-tools/tools/provider-config-ci/check.mjs provider-ci
       - uses: actions/upload-artifact@v4

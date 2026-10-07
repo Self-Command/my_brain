@@ -8,7 +8,10 @@ import {
   type VoiceOrbState,
 } from "../components/ui/VoiceOrb";
 import { useMobileAppStore } from "../stores/mobileAppStore";
-import { createDeviceAudioIoPort } from "./deviceAudioClient";
+import { createDeviceAudioIoPort, type DeviceAudioIoPort } from "./deviceAudioClient";
+import { activeProfile, loadProviderProfiles, subscribeProviderProfiles } from "../services/providerProfiles";
+import { createTtsPlayback } from "./ttsPlayback";
+import { replyToVoiceChat } from "../services/configuredLlm";
 import {
   createVoiceSessionController,
   type VoiceSessionController,
@@ -51,9 +54,12 @@ function mapFsmToOrbState(
 export interface LivingBrainVoiceOrbOptions {
   enabled: boolean;
   dispatchIntent: (intent: UserIntent) => string | void;
+  dispatchVoiceIntent?: (intent: UserIntent, signal?: AbortSignal) => Promise<string | void>;
 }
 
-export function useLivingBrainVoiceOrb({ enabled, dispatchIntent }: LivingBrainVoiceOrbOptions) {
+export function useLivingBrainVoiceOrb({ enabled, dispatchIntent, dispatchVoiceIntent }: LivingBrainVoiceOrbOptions) {
+  const [configEpoch, setConfigEpoch] = useState(0);
+  useEffect(() => subscribeProviderProfiles(() => setConfigEpoch((value) => value + 1)), []);
   const setVoiceDisconnected = useMobileAppStore((s) => s.setVoiceDisconnected);
   const voiceDisconnected = useMobileAppStore((s) =>
     s.degraded.active.includes("voice_disconnected"),
@@ -63,6 +69,8 @@ export function useLivingBrainVoiceOrb({ enabled, dispatchIntent }: LivingBrainV
   const ingestAttemptRef = useRef<1 | 2>(1);
   const dispatchIntentRef = useRef(dispatchIntent);
   dispatchIntentRef.current = dispatchIntent;
+  const dispatchVoiceIntentRef = useRef(dispatchVoiceIntent);
+  dispatchVoiceIntentRef.current = dispatchVoiceIntent;
 
   const platformOs: "android" | "ios" = Platform.OS === "ios" ? "ios" : "android";
 
@@ -73,6 +81,12 @@ export function useLivingBrainVoiceOrb({ enabled, dispatchIntent }: LivingBrainV
       skipMicPermissionCheck: !enabled,
       audioIo: getLivingBrainAudioIo(),
       onIntent: (intent) => dispatchIntentRef.current(intent),
+      onAsyncIntent: (intent, signal) => dispatchVoiceIntentRef.current?.(intent, signal) ?? Promise.resolve(dispatchIntentRef.current(intent)),
+      onFreeformTranscript: replyToVoiceChat,
+      isAwaitingConfirmation: () => {
+        const conversation = useMobileAppStore.getState().conversation;
+        return conversation.phase === "ingest_pending" || conversation.phase === "provisional_pending" || conversation.activeSignalId !== null || conversation.activeProvisionalId !== null;
+      },
       onDegradedVoice: () => setVoiceDisconnected(true),
       onClearDegradedVoice: () => setVoiceDisconnected(false),
     }),
@@ -92,15 +106,20 @@ export function useLivingBrainVoiceOrb({ enabled, dispatchIntent }: LivingBrainV
       ingestAttemptRef.current = 1;
       return;
     }
-    const next = createVoiceSessionController(sessionDepsRef.current);
-    setController(next);
-    registerActiveVoiceController(next);
+    const settings = loadProviderProfiles();
+    const profile = settings ? activeProfile(settings, "voice") : undefined;
+    const tts = settings?.voiceSelection.mode === "composed" && profile ? createTtsPlayback(profile) : null;
+    const session = createVoiceSessionController({ ...sessionDepsRef.current, ...(tts ? { audioIo: tts.port } : {}) });
+    setConnected(false);
+    setController(session);
+    registerActiveVoiceController(session);
     return () => {
-      next.disconnect();
+      session.disconnect();
+      if (tts) void tts.dispose().catch(() => undefined);
       setController(null);
       registerActiveVoiceController(null);
     };
-  }, [enabled]);
+  }, [enabled, configEpoch]);
 
   const subscribe = useCallback(
     (cb: () => void) => controller?.subscribe(cb) ?? (() => undefined),

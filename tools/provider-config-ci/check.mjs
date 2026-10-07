@@ -22,5 +22,6 @@ const results = commands.map(([name, args]) => {
   process.stdout.write(`${name}: exit ${result.status ?? 1}\n`);
   return { name, exitCode: result.status ?? 1 };
 });
-writeFileSync(`${output}/commands.json`, JSON.stringify({ sha: process.env.GITHUB_SHA, results }, null, 2));
+const sha = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+writeFileSync(`${output}/commands.json`, JSON.stringify({ sha, results }, null, 2));
 // The summary job enforces every required exit code and compares full tests against the baseline.
