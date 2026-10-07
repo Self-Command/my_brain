@@ -26,7 +26,8 @@
 1. Ubuntu 22.04、Node 20、pnpm 9.15.5、Java 17。
 2. 安装 Android SDK 35、Build Tools 35.0.0、NDK 26.1.10909125、CMake 3.22.1。
 3. 按 lockfile 安装完整 workspace 依赖。
-4. 使用已提交的 Android 工程运行 `assembleRelease`，保留原生模块、权限及备份规则。
+4. 先验证 Android JavaScript 打包，再使用已提交的 Android 工程运行
+   `assembleRelease`，保留原生模块、权限及备份规则。
 5. 验证 APK 签名和内嵌 JavaScript，计算 SHA-256，保存 Actions artifact。
 6. 独立发布 job 用 `contents: write` 发布到当前 fork 的 Releases。
 

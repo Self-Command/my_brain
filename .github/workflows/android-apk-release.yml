@@ -58,6 +58,10 @@ jobs:
           echo "ORG_GRADLE_PROJECT_mobileVersionCode=$((GITHUB_RUN_NUMBER + 1))" >> "$GITHUB_ENV"
           echo "ORG_GRADLE_PROJECT_mobileVersionName=0.1.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
 
+      - name: Verify Android JavaScript bundle
+        working-directory: apps/mobile
+        run: pnpm exec expo export --platform android --output-dir build/ci-export --max-workers 2
+
       - name: Build standalone release APK
         # Keep the checked-in native permissions, modules, and backup rules.
         run: bash apps/mobile/scripts/build-android-release-apk.sh

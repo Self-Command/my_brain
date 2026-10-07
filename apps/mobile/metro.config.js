@@ -14,7 +14,8 @@ config.resolver.nodeModulesPaths = [
   path.resolve(monorepoRoot, "node_modules"),
 ];
 
-config.resolver.disableHierarchicalLookup = true;
+// pnpm keeps dependencies beside their importing package, including core and RN.
+config.resolver.disableHierarchicalLookup = false;
 config.resolver.unstable_enableSymlinks = true;
 
 
