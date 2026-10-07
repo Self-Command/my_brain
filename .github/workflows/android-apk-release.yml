@@ -1,0 +1,120 @@
+name: Android APK Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      CI: "1"
+      NODE_ENV: production
+      # Never include developer credentials from app.config.js in a public APK.
+      EAS_BUILD_PROFILE: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;26.1.10909125" "cmake;3.22.1"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install workspace dependencies
+        # Metro needs Babel/TypeScript packages even in a release build.
+        run: pnpm install --frozen-lockfile --prod=false
+
+      - name: Set build version
+        run: |
+          echo "ORG_GRADLE_PROJECT_mobileVersionCode=$((GITHUB_RUN_NUMBER + 1))" >> "$GITHUB_ENV"
+          echo "ORG_GRADLE_PROJECT_mobileVersionName=0.1.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+
+      - name: Build standalone release APK
+        # Keep the checked-in native permissions, modules, and backup rules.
+        run: bash apps/mobile/scripts/build-android-release-apk.sh
+
+      - name: Verify APK signature and embedded JavaScript
+        run: |
+          APK=apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          unzip -l "$APK" | grep 'assets/index.android.bundle'
+
+      - name: Prepare download and checksum
+        run: |
+          mkdir -p apk-release
+          cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk apk-release/my-brain-android.apk
+          cd apk-release
+          sha256sum my-brain-android.apk > my-brain-android.apk.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: apk-release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: build
+    # Manual builds on another branch remain downloadable as Actions artifacts.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: apk-release
+
+      - name: Publish APK to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          TAG="android-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          cat > release-notes.md <<EOF
+          下载 **my-brain-android.apk**，在 Android 7.0 及以上设备上安装。
+
+          - 独立安装包，包含 JavaScript，无需 Expo Go 或本地开发服务器。
+          - 当前为自用测试构建，使用仓库固定的 Android debug 签名，非应用商店正式发行包。
+          - 不内置 API 密钥；真实服务需在应用内配置，无配置时按应用现有降级流程运行。
+          - 版本：0.1.${GITHUB_RUN_NUMBER}
+          - 源码提交：${GITHUB_SHA}
+          - 构建记录：https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - 校验文件：my-brain-android.apk.sha256
+          EOF
+          gh release create "$TAG" \
+            apk-release/my-brain-android.apk \
+            apk-release/my-brain-android.apk.sha256 \
+            --target "$GITHUB_SHA" \
+            --title "Android APK 0.1.${GITHUB_RUN_NUMBER}" \
+            --notes-file release-notes.md \
+            --latest
+          echo "### APK 下载" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}" >> "$GITHUB_STEP_SUMMARY"

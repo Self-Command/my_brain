@@ -94,8 +94,9 @@ android {
         applicationId 'app.mybrain.personal'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "0.0.0"
+        // CI versions increase so an APK update can preserve local user data.
+        versionCode Integer.parseInt(findProperty('mobileVersionCode') ?: '1')
+        versionName findProperty('mobileVersionName') ?: "0.0.0"
     }
     signingConfigs {
         debug {
