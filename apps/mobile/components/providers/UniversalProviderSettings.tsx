@@ -160,7 +160,7 @@ function ProfileEditor({ profile, settings, onCandidate }: { profile: ServicePro
       if (saved && mounted.current && !operation.signal.aborted) recordProfileVerification(saved, false);
       notice = failure instanceof Error ? failure.message : "验证失败";
       if (mounted.current) setMessage(notice);
-    } finally { if (mounted.current) { setBusy(false); if (saved?.id !== profile.id && saved) onCandidate(saved.id, notice); } }
+    } finally { if (mounted.current && verificationAbort.current === operation) { setBusy(false); if (saved?.id !== profile.id && saved) onCandidate(saved.id, notice); } }
   };
   const activate = () => {
     const current = loadProviderProfiles();
@@ -201,7 +201,7 @@ function ProfileEditor({ profile, settings, onCandidate }: { profile: ServicePro
       <Pressable disabled={busy} testID={`provider-${profile.role}-clear-key`} onPress={() => {
         void getSecureCredentialStore().delete(profile.credentialRef).then(() => { setKeyDraft(""); setLast4(null); setMessage("密钥已清除，需要重新保存并验证"); }).catch(() => setMessage("密钥清除失败"));
       }}><Text style={{ color: colors.primary }}>清除密钥</Text></Pressable>
-      {profile.role === "tts" ? <Pressable onPress={() => { preview.current?.stop(); setBusy(false); setMessage("试听已停止，未授予验证状态"); }}><Text style={{ color: colors.primary }}>停止试听</Text></Pressable> : null}
+      {profile.role === "tts" ? <Pressable onPress={() => { verificationAbort.current?.abort(); preview.current?.stop(); setBusy(false); setMessage("试听已停止，未授予验证状态"); }}><Text style={{ color: colors.primary }}>停止试听</Text></Pressable> : null}
     </View>
     {message ? <Text style={{ color: colors.textSecondary }} accessibilityLiveRegion="polite">{message}</Text> : null}
   </View>;

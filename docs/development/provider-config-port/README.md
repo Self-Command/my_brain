@@ -26,6 +26,7 @@
 | [DESIGN.md](DESIGN.md) | 数据结构、协议、配置界面、运行时接入、迁移与核心边界 |
 | [IMPLEMENTATION_AND_ACCEPTANCE.md](IMPLEMENTATION_AND_ACCEPTANCE.md) | 分阶段实施、文件改动清单、验收用例、测试与 APK 交付 |
 | [SOURCE_AUDIT.md](SOURCE_AUDIT.md) | 两边代码核对结果、移植与排除清单、接口依据与来源许可 |
+| [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) | 实际模块、设置使用、迁移恢复与 Actions 证据 |
 
 本方案遵循 [项目手册](../../handbook/PROJECT_HANDBOOK.md)、[产品说明](../../../PRODUCT.md)、[移动产品计划](../../MOBILE_PRODUCT_PLAN.md) 和 [M3 实时语音规范](../../../specs/mobile-app/M3-realtime-voice-and-token-exchange.md)。legacy Web / Tauri 设置页不属于本次必交范围，不阻塞 Android 交付。
 
@@ -61,7 +62,7 @@
 
 ## 3. 审批需要确认的产品选择
 
-以下为本方案的建议默认值。审批可以整体批准，也可以按编号修改；未审批前仅保留文档。
+以下产品选择已经通过用户的实施计划确定。
 
 | 决策 | 建议默认值 | 对用户的影响 |
 | --- | --- | --- |
@@ -112,7 +113,7 @@ PC-10 是用户明确要求，不是待选项。不得在本机运行应用编�
 | 审批结论 | 用户通过“PLEASE IMPLEMENT THIS PLAN”批准执行，并确认首版测试包、文字降级及移动主线门槛 |
 | 审批版本 | 1.0 |
 | 审批日期 | 2026-10-07 |
-| 调整的决策编号 | 待填写 |
-| 明确增加 / 排除的范围 | 待填写 |
+| 调整的决策编号 | A1–A7 全部采用；首版为 Prerelease 测试 APK，真机缺失不阻断测试版 |
+| 明确增加 / 排除的范围 | 全部验证在 Actions；首批 24 kHz PCM；移动/core 新失败阻断，公开无关历史 Web 失败 |
 
 已进入实施；所有开发验证与构建仅在 Actions 执行。实现和验收状态以对应提交、工作流和报告为准。

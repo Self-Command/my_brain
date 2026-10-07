@@ -167,6 +167,8 @@ my_brain/
 
 ## 7. Provider 与配置
 
+**移动主线（2026-10-07）：** `apps/mobile/services/providerProfiles.ts` 管理 v2 服务配置、修订验证与可恢复迁移；长效密钥保存在 SecureStore。`packages/core/src/providers/serviceConfig.ts` 是通用 LLM 工厂，`serviceCatalog.ts` 查询模型目录，`ttsProtocol.ts` 定义 Speech / MiMo PCM 协议。移动设置支持独立 LLM、豆包实时会话或设备识别 + LLM + TTS。全部开发验证、APK 和 Prerelease 经过 Actions 门槛。实际接入及未验收项见 [通用配置实施记录](../development/provider-config-port/IMPLEMENTATION_STATUS.md)。以下 `src/` 环境变量说明属于 legacy Web/Tauri。
+
 **工厂入口：** `src/providers/index.ts` → `createAppProviders()`  
 **环境变量：** `.env.example` → `.env`（gitignore）
 

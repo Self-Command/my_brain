@@ -42,7 +42,7 @@ describe("TTS playback cancellation and completion", () => {
     const original = Pipeline.subscribe;
     vi.spyOn(Pipeline, "subscribe").mockImplementation((event, callback) => {
       if (event === "PipelineAudioFocusLost") loseFocus = () => callback({} as never);
-      return original(event, callback);
+      return original.call(Pipeline, event, callback);
     });
     vi.mocked(providerHttpStream).mockImplementation(() => new Promise((resolve) => { deliver = resolve; }));
     const invalidate = vi.spyOn(Pipeline, "invalidateTurn");

@@ -157,7 +157,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          TAG="provider-config-0.2.${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          TAG="provider-config-0.2.${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           cp emulator-evidence/emulator-verification.json apk-release/
           cat > release-notes.md <<EOF
           通用配置测试版：OpenAI 兼容 LLM、OpenAI Speech PCM TTS、MiMo 音频 Chat 协议，以及保留的豆包实时会话。

@@ -18,6 +18,8 @@ const requiredFailures = commands.results.filter((item) => item.name !== "full-t
 const requiredNames = ["root-types", "root-lint", "core-types", "core-boundaries", "mobile-types", "mobile-core-tests", "full-tests"];
 for (const name of requiredNames) if (!commands.results.some((item) => item.name === name)) requiredFailures.push({ name, exitCode: 1, reason: "Missing required check" });
 if (mobile.numFailedTests || mobile.numFailedTestSuites || mobile.numTotalTests < 800) requiredFailures.push({ name: "mobile-core-coverage", exitCode: 1, reason: "Missing or failing mobile/core coverage" });
+const fullCommand = commands.results.find((item) => item.name === "full-tests");
+if (fullCommand?.exitCode !== 0 && (!fullFailures.length || current.numFailedTests > fullFailures.length || current.numRuntimeErrorTestSuites || current.unhandledErrors?.length)) requiredFailures.push({ name: "full-test-runtime", exitCode: 1, reason: "Full-suite process failure is not explained by known baseline assertions" });
 const result = {
   sha: commands.sha,
   status: requiredFailures.length || unexpected.length ? "FAIL" : "PASS",
