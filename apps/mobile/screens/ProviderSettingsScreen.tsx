@@ -28,6 +28,7 @@ import {
   type ProviderSettingsConfig,
 } from "../services/providerConfigStore";
 import { validateProviderHttpsUrl } from "../services/providerUrlValidation";
+import { getSecureCredentialStore } from "../services/secureCredentialStore";
 import { useMobileAppStore } from "../stores/mobileAppStore";
 import { UniversalProviderSettings } from "../components/providers/UniversalProviderSettings";
 import { useTheme } from "../theme/ThemeProvider";

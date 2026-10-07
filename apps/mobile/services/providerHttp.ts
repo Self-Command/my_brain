@@ -20,6 +20,7 @@ export async function providerHttpStream(url: string, request: HttpRequest): Pro
     return { status: response.status, close() {}, chunks: (async function* () { yield new Uint8Array(await response.arrayBuffer()); })() };
   }
   const native = await getProviderHttpNative();
+  if (request.signal?.aborted) throw new Error("请求已取消");
   const id = `request-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const queue: Uint8Array[] = [];
   let done = false;

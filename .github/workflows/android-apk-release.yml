@@ -1,97 +1,138 @@
 name: Android APK Release
-
 on:
-  push:
-    branches: [main]
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+      validation_run:
+        type: string
+        required: true
   workflow_dispatch:
-
+    inputs:
+      publish:
+        type: boolean
+        default: false
+      validation_run:
+        description: Successful Provider Config Validation run for this exact commit
+        required: true
+        type: string
 permissions:
   contents: read
-
-concurrency:
-  group: android-apk-${{ github.ref }}
-  cancel-in-progress: true
-
+  actions: read
 jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     env:
-      CI: "1"
+      CI: '1'
       NODE_ENV: production
-      # Never include developer credentials from app.config.js in a public APK.
       EAS_BUILD_PROFILE: production
     steps:
       - uses: actions/checkout@v4
-
+      - uses: actions/download-artifact@v4
+        with:
+          name: provider-verification
+          path: verification
+          run-id: ${{ inputs.validation_run }}
+          github-token: ${{ github.token }}
+      - name: Require passing validation for the exact source commit
+        run: |
+          node -e 'const r=require("./verification/verification.json"); if(r.status!=="PASS" || r.sha!==process.env.GITHUB_SHA) throw Error("Validation does not authorize this commit")'
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.5
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
-
+          java-version: '17'
       - uses: android-actions/setup-android@v3
         with:
-          # The old SDK "tools" package has been removed from Google's index.
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
-
-      - name: Install Android SDK components
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;26.1.10909125" "cmake;3.22.1"
-
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;26.1.10909125' 'cmake;3.22.1'
       - uses: gradle/actions/setup-gradle@v4
-
-      - name: Install workspace dependencies
-        # Metro needs Babel/TypeScript packages even in a release build.
-        run: pnpm install --frozen-lockfile --prod=false
-
-      - name: Set build version
+      - run: pnpm install --frozen-lockfile --prod=false
+      - name: Set increasing upgrade version
         run: |
-          echo "ORG_GRADLE_PROJECT_mobileVersionCode=$((GITHUB_RUN_NUMBER + 1))" >> "$GITHUB_ENV"
-          echo "ORG_GRADLE_PROJECT_mobileVersionName=0.1.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
-
-      - name: Verify Android JavaScript bundle
+          echo "ORG_GRADLE_PROJECT_mobileVersionCode=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          echo "ORG_GRADLE_PROJECT_mobileVersionName=0.2.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+      - name: Export production Android JavaScript
         working-directory: apps/mobile
         run: pnpm exec expo export --platform android --output-dir build/ci-export --max-workers 2
-
-      - name: Build standalone release APK
-        # Keep the checked-in native permissions, modules, and backup rules.
+      - name: Build standalone APK
         run: bash apps/mobile/scripts/build-android-release-apk.sh
-
-      - name: Verify APK signature and embedded JavaScript
-        run: |
-          APK=apps/mobile/android/app/build/outputs/apk/release/app-release.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
-          unzip -l "$APK" | grep 'assets/index.android.bundle'
-
-      - name: Prepare download and checksum
+      - name: Download previously installed baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download android-build-3-1 --repo '${{ github.repository }}' --pattern 'my-brain-android.apk*' --dir baseline-apk
+      - name: Verify package, signature, JS, and scan sensitive values
+        run: python tools/provider-config-ci/verify-apk.py
+      - name: Prepare downloads and reports
         run: |
           mkdir -p apk-release
           cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk apk-release/my-brain-android.apk
-          cd apk-release
-          sha256sum my-brain-android.apk > my-brain-android.apk.sha256
-
+          cp verification/verification.json apk-release/provider-verification.json
+          cp apk-verification.json apk-release/
+          cp docs/development/provider-config-port/KNOWN_LIMITATIONS.md apk-release/known-limitations.md
+          (cd apk-release && sha256sum my-brain-android.apk > my-brain-android.apk.sha256)
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
           path: apk-release/*
           if-no-files-found: error
-          retention-days: 14
-
-  release:
+  emulator:
     needs: build
-    # Manual builds on another branch remain downloadable as Actions artifacts.
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: apk-release
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install pinned Maestro
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download cli-2.11.0 --repo mobile-dev-inc/Maestro --pattern maestro.zip --pattern checksums_sha256.txt --dir maestro-download
+          (cd maestro-download && grep 'maestro.zip' checksums_sha256.txt | sha256sum -c -)
+          unzip -q maestro-download/maestro.zip -d "$HOME/.maestro"
+          echo "$HOME/.maestro/maestro/bin" >> "$GITHUB_PATH"
+      - name: Download baseline for real upgrade installation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download android-build-3-1 --repo '${{ github.repository }}' --pattern my-brain-android.apk --dir baseline-apk
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: bash tools/provider-config-ci/emulator-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-emulator-verification
+          path: emulator-evidence/
+          if-no-files-found: error
+  release:
+    needs: [build, emulator]
+    if: inputs.publish && github.event_name != 'pull_request'
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
@@ -99,30 +140,29 @@ jobs:
         with:
           name: android-apk
           path: apk-release
-
-      - name: Publish APK to GitHub Releases
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-emulator-verification
+          path: emulator-evidence
+      - name: Publish tested prerelease
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          TAG="android-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          TAG="provider-config-0.2.${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          cp emulator-evidence/emulator-verification.json apk-release/
           cat > release-notes.md <<EOF
-          下载 **my-brain-android.apk**，在 Android 7.0 及以上设备上安装。
+          通用配置测试版：OpenAI 兼容 LLM、OpenAI Speech PCM TTS、MiMo 音频 Chat 协议，以及保留的豆包实时会话。
 
-          - 独立安装包，包含 JavaScript，无需 Expo Go 或本地开发服务器。
-          - 当前为自用测试构建，使用仓库固定的 Android debug 签名，非应用商店正式发行包。
-          - 不内置 API 密钥；真实服务需在应用内配置，无配置时按应用现有降级流程运行。
-          - 版本：0.1.${GITHUB_RUN_NUMBER}
-          - 源码提交：${GITHUB_SHA}
-          - 构建记录：https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-          - 校验文件：my-brain-android.apk.sha256
+          下载 my-brain-android.apk 可覆盖安装此前版本，沿用应用 ID 和原签名。密钥由用户填写并保存在本机 SecureStore。
+
+          - 移动端、共享核心、本次功能检查及 Android 模拟器安装升级检查通过后才发布。
+          - 完整仓库的基线遗留失败详见 provider-verification.json；新增回归阻断发布。
+          - 真机麦克风、回声、蓝牙、来电、声学打断 P50 和 iOS 未验收。协议测试使用合成测试数据，真实账号调用权限需应用内验证。
+          - 首批 TTS 要求 PCM16LE 单声道 24 kHz；其他私有协议需要新增适配器。
+          - 版本：0.2.${GITHUB_RUN_NUMBER}；提交：${GITHUB_SHA}
+          - Actions：https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - APK SHA256 和自动化报告随发布附件提供。
           EOF
-          gh release create "$TAG" \
-            apk-release/my-brain-android.apk \
-            apk-release/my-brain-android.apk.sha256 \
-            --target "$GITHUB_SHA" \
-            --title "Android APK 0.1.${GITHUB_RUN_NUMBER}" \
-            --notes-file release-notes.md \
-            --latest
-          echo "### APK 下载" >> "$GITHUB_STEP_SUMMARY"
-          echo "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          gh release create "$TAG" apk-release/* --target "$GITHUB_SHA" --title "通用 LLM / TTS 测试版 0.2.${GITHUB_RUN_NUMBER}" --notes-file release-notes.md --prerelease --latest=false
+          echo "发布：https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}" >> "$GITHUB_STEP_SUMMARY"

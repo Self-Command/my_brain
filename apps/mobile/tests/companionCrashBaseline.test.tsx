@@ -91,6 +91,9 @@ vi.mock("../storage/storageSession", () => ({
     setMeta: (key: string, value: string) => { providerMeta.set(key, value); },
     deleteMeta: (key: string) => { providerMeta.delete(key); },
     appendDiagnosticEvent: vi.fn(),
+    saveGraphSnapshot: vi.fn(), saveHistoryEntry: vi.fn(), saveUserModeProfile: vi.fn(),
+    saveCorrectionState: vi.fn(), saveProvisionalCandidates: vi.fn(), saveAdaptiveSignals: vi.fn(),
+    saveLearningTraces: vi.fn(), savePendingIngestProposal: vi.fn(), saveProviderConfig: vi.fn(),
   } }),
 }));
 

@@ -12,6 +12,7 @@ import {
 
 import { getSecureCredentialStore, type SecureCredentialStore } from "../services/secureCredentialStore";
 import { providerFetch } from "../services/providerHttp";
+import { activeProfile, loadProviderProfiles } from "../services/providerProfiles";
 import {
   loadProviderSettings,
   type LlmConnectionFetch,
@@ -42,7 +43,7 @@ function resolveRadarFetch(explicit?: RadarFetch): RadarFetch {
     return explicit;
   }
   if (typeof globalThis.fetch === "function") {
-    return (url, request) => providerFetch(url, { method: request?.method ?? "GET", headers: request?.headers ?? {}, signal: request?.signal });
+    return globalThis.fetch as RadarFetch;
   }
   return async () => {
     throw new Error("fetch unavailable");
@@ -64,7 +65,13 @@ export async function resolveMobileRadarSignals(
   const radarSettings = options.radarSettings ?? settings.radar;
   const llmSettings = options.llmSettings ?? settings.llm;
   const fetchImpl = resolveRadarFetch(options.fetch);
-  const apiKey = await (options.credentialStore ?? getSecureCredentialStore()).get("llm_api_key");
+  const profiles = loadProviderProfiles();
+  const capturedProfile = profiles && !options.llmSettings ? activeProfile(profiles, "llm") : undefined;
+  const apiKey = await (options.credentialStore ?? getSecureCredentialStore()).get(capturedProfile?.credentialRef ?? "llm_api_key");
+  if (capturedProfile) {
+    const latest = loadProviderProfiles(); const current = latest ? activeProfile(latest, "llm") : undefined;
+    if (current?.id !== capturedProfile.id || current.configRevision !== capturedProfile.configRevision || current.credentialRevision !== capturedProfile.credentialRevision) throw new Error("服务配置已改变，请重新获取");
+  }
   const hasLlmKey = Boolean(apiKey?.trim()) && llmSettings.providerId !== "mock";
   const liveRadarEnabled =
     radarSettings.enabledSources.length > 0 &&
@@ -73,7 +80,7 @@ export async function resolveMobileRadarSignals(
   const llm =
     options.llm ??
     (liveEnabled && apiKey
-      ? createConfiguredLlmProvider(llmSettings, apiKey.trim(), fetchImpl)
+      ? createConfiguredLlmProvider(llmSettings, apiKey.trim(), options.fetch ?? providerFetch as LlmConnectionFetch)
       : createMockLlmProvider());
 
   const result = await fetchLiveRadarSignals({

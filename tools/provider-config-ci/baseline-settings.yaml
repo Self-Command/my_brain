@@ -1,0 +1,34 @@
+appId: app.mybrain.personal
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: provider-llm-endpoint
+    timeout: 60000
+- tapOn:
+    id: provider-llm-endpoint
+- eraseText
+- inputText: https://example.com/proxy/v1
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: provider-llm-key-input
+    direction: DOWN
+- tapOn:
+    id: provider-llm-key-input
+- inputText: fixture-upgrade-ab12
+- hideKeyboard
+- tapOn:
+    id: provider-llm-key-save
+- scrollUntilVisible:
+    element:
+      id: provider-voice-app-id
+    direction: DOWN
+- tapOn:
+    id: provider-voice-app-id
+- inputText: preserved-app-id
+- hideKeyboard
+- tapOn:
+    id: provider-voice-key-input
+- hideKeyboard
+- stopApp

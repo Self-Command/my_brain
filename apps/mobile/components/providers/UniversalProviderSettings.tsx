@@ -162,6 +162,9 @@ function ProfileEditor({ profile, settings }: { profile: ServiceProfile; setting
       <Pressable disabled={busy} testID={`provider-${profile.role}-save`} onPress={() => { void save().then(() => setMessage("配置已保存，目录将自动获取，实际调用需验证")).catch((failure: unknown) => setMessage(failure instanceof Error ? failure.message : "保存失败")); }}><Text style={{ color: colors.primary }}>保存配置与 Key</Text></Pressable>
       <Pressable disabled={busy} testID={`test-connection-${profile.role}`} onPress={() => { void verify(); }}><Text style={{ color: colors.primary }}>{busy ? "验证中…" : profile.role === "tts" ? "试听并验证（可能计费）" : "验证连接（可能计费）"}</Text></Pressable>
       <Pressable disabled={busy} testID={`provider-${profile.role}-activate`} onPress={activate}><Text style={{ color: colors.primary }}>启用配置</Text></Pressable>
+      <Pressable disabled={busy} testID={`provider-${profile.role}-clear-key`} onPress={() => {
+        void getSecureCredentialStore().delete(profile.credentialRef).then(() => { setKeyDraft(""); setLast4(null); setMessage("密钥已清除，需要重新保存并验证"); }).catch(() => setMessage("密钥清除失败"));
+      }}><Text style={{ color: colors.primary }}>清除密钥</Text></Pressable>
       {profile.role === "tts" ? <Pressable onPress={() => { preview.current?.stop(); setBusy(false); setMessage("试听已停止，未授予验证状态"); }}><Text style={{ color: colors.primary }}>停止试听</Text></Pressable> : null}
     </View>
     {message ? <Text style={{ color: colors.textSecondary }} accessibilityLiveRegion="polite">{message}</Text> : null}
