@@ -115,6 +115,8 @@ import {
   resetSecureCredentialStoreForTests,
 } from "../services/secureCredentialStore";
 import { useMobileAppStore } from "../stores/mobileAppStore";
+import { activeProfile, loadProviderProfiles, recordProfileVerification } from "../services/providerProfiles";
+import { getSecureCredentialStore } from "../services/secureCredentialStore";
 
 vi.mock("../services/secureCredentialStore", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../services/secureCredentialStore")>();
@@ -157,7 +159,7 @@ describe("ProviderSettingsScreen (S14)", () => {
     });
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
   it("renders provider settings with all connection blocks", async () => {
     await renderProviderSettings();
@@ -235,6 +237,26 @@ describe("ProviderSettingsScreen (S14)", () => {
     expect(screen.getByTestId("provider-token-exchange-byok-note").textContent).toMatch(
       /BYOK/,
     );
+  });
+  it("saves edits to a working service as a separate candidate and retains the enabled model and key after failure", async () => {
+    await renderProviderSettings();
+    fireEvent.change(screen.getByTestId("provider-llm-endpoint"), { target: { value: "https://example.com/v1" } });
+    fireEvent.change(screen.getByTestId("provider-llm-model"), { target: { value: "working-model" } });
+    fireEvent.change(screen.getByTestId("provider-llm-key-input"), { target: { value: "working-secret-ab12" } });
+    fireEvent.click(screen.getByTestId("provider-llm-save"));
+    await waitFor(() => expect(screen.getByTestId("provider-llm-key-mask").textContent).toContain("ab12"));
+    const working = activeProfile(loadProviderProfiles()!, "llm")!;
+    recordProfileVerification(working, true);
+    fireEvent.change(screen.getByTestId("provider-llm-model"), { target: { value: "failing-candidate" } });
+    fireEvent.click(screen.getByTestId("provider-llm-save"));
+    await waitFor(() => expect(loadProviderProfiles()?.profiles.length).toBe(3));
+    expect(activeProfile(loadProviderProfiles()!, "llm")?.modelId).toBe("working-model");
+    expect(await getSecureCredentialStore().get(working.credentialRef)).toBe("working-secret-ab12");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("private server error", { status: 401 })));
+    fireEvent.click(screen.getByTestId("test-connection-llm"));
+    await screen.findByText(/UNAUTHORIZED|MISSING_API_KEY|AUTHENTICATION_ERROR/);
+    expect(activeProfile(loadProviderProfiles()!, "llm")?.id).toBe(working.id);
+    expect(useMobileAppStore.getState().providerLlmLive).toBe(true);
   });
 
   it("execution API enabled switch defaults off", async () => {

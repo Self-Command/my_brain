@@ -12,12 +12,14 @@ import java.util.concurrent.Executors
 // Platform primitive only: no vendor SDK, recording, persistence, or business logic.
 class ProviderHttpModule : Module() {
   private val requests = ConcurrentHashMap<String, HttpURLConnection>()
+  private val activeRequests = ConcurrentHashMap.newKeySet<String>()
   private val cancelled = ConcurrentHashMap.newKeySet<String>()
   private val workers = Executors.newCachedThreadPool()
   override fun definition() = ModuleDefinition {
     Name("ProviderHttp")
     Events("ProviderResponse")
     AsyncFunction("request") { id: String, address: String, method: String, headers: Map<String, String>, body: String?, promise: Promise ->
+      activeRequests.add(id)
       workers.execute {
         var connection: HttpURLConnection? = null
         try {
@@ -63,11 +65,12 @@ class ProviderHttpModule : Module() {
         } finally {
           requests.remove(id)
           cancelled.remove(id)
+          activeRequests.remove(id)
           connection?.disconnect()
         }
       }
     }
-    Function("cancel") { id: String -> cancelled.add(id); requests.remove(id)?.disconnect(); Unit }
-    OnDestroy { requests.values.forEach { it.disconnect() }; requests.clear(); workers.shutdownNow() }
+    Function("cancel") { id: String -> if (activeRequests.contains(id)) cancelled.add(id); requests.remove(id)?.disconnect(); Unit }
+    OnDestroy { requests.values.forEach { it.disconnect() }; requests.clear(); cancelled.clear(); activeRequests.clear(); workers.shutdownNow() }
   }
 }

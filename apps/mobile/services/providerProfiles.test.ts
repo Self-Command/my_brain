@@ -4,6 +4,9 @@ import { setStorageSession } from "../storage/storageSession";
 import { createMemorySecureCredentialStore } from "./secureCredentialStore";
 import { activeProfile, loadProviderProfiles, migrateProviderProfiles, profileReadiness, recordProfileVerification, saveProviderProfiles, updateServiceProfile } from "./providerProfiles";
 import { DEFAULT_PROVIDER_SETTINGS, loadProviderSettings, selectMainRouteEnabled } from "./providerConfigStore";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 let session: ReturnType<typeof createTestStorageSession>;
 beforeEach(() => { session = createTestStorageSession(":memory:"); session.storage.migrate(); setStorageSession(session); });
 afterEach(() => { setStorageSession(null); session.driver.close?.(); });
@@ -67,5 +70,25 @@ describe("provider profile migration and readiness", () => {
     session.storage.setMeta("provider.settings.v1", "invalid-json");
     await expect(migrateProviderProfiles(createMemorySecureCredentialStore())).rejects.toThrow("损坏");
     expect(session.storage.getMeta("provider.settings.v1")).toBe("invalid-json"); expect(loadProviderProfiles()).toBeNull();
+  });
+  it("retains malformed v2 settings and refuses to replace them using the legacy copy", async () => {
+    session.storage.setMeta("provider.settings.v2", "{broken");
+    await expect(migrateProviderProfiles(createMemorySecureCredentialStore())).rejects.toThrow("损坏");
+    expect(session.storage.getMeta("provider.settings.v2")).toBe("{broken");
+  });
+  it("serializes simultaneous boot/settings migration and retains settings after storage restart", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "provider-restart-")); const database = join(directory, "state.sqlite");
+    session.driver.close?.(); session = createTestStorageSession(database); session.storage.migrate(); setStorageSession(session);
+    try {
+      const credentials = createMemorySecureCredentialStore();
+      const [first, second] = await Promise.all([migrateProviderProfiles(credentials), migrateProviderProfiles(credentials)]);
+      expect(first).toEqual(second);
+      const original = activeProfile(first, "llm")!;
+      updateServiceProfile({ ...original, baseUrl: "https://example.com/prefix/v1", modelId: "restart-model" });
+      await credentials.set(original.credentialRef, "restart-secret");
+      session.driver.close?.(); session = createTestStorageSession(database); session.storage.migrate(); setStorageSession(session);
+      expect(activeProfile(loadProviderProfiles()!, "llm")?.modelId).toBe("restart-model");
+      expect(await credentials.get("llm_api_key")).toBe("restart-secret");
+    } finally { session.driver.close?.(); session = createTestStorageSession(":memory:"); setStorageSession(session); rmSync(directory, { recursive: true, force: true }); }
   });
 });

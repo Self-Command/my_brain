@@ -14,7 +14,16 @@ import { spacing } from "../../theme/tokens";
 
 function syncApp() {
   const settings = loadProviderProfiles();
-  if (settings) useMobileAppStore.getState().applyProviderVerification(profileReadiness(settings));
+  if (!settings) return;
+  useMobileAppStore.getState().applyProviderVerification(profileReadiness(settings));
+  const profile = activeProfile(settings, "llm");
+  if (!profile) return;
+  void getSecureCredentialStore().has(profile.credentialRef).then((hasApiKey) => {
+    const current = loadProviderProfiles(); const active = current ? activeProfile(current, "llm") : undefined;
+    if (!current || active?.id !== profile.id || active.credentialRevision !== profile.credentialRevision) return;
+    useMobileAppStore.setState({ hasApiKey });
+    useMobileAppStore.getState().applyProviderVerification(profileReadiness(current));
+  }).catch(() => undefined);
 }
 function newProfile(role: "llm" | "tts" | "realtime", preset: "custom" | "mimo" = "custom"): ServiceProfile {
   const id = `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -49,7 +58,7 @@ export function UniversalProviderSettings() {
     <Text style={[styles.title, { color: colors.text }]}>语言模型 · OpenAI 兼容</Text>
     <View style={styles.row}>{settings.profiles.filter((p) => p.role === "llm").map((p) => <Pressable key={p.id} onPress={() => setEditingLlm(p.id)}><Text style={{ color: colors.primary }}>{p.displayName}{p.id === settings.activeLlmProfileId ? " · 已选用" : ""}</Text></Pressable>)}</View>
     <Pressable onPress={() => add("llm")} testID="provider-add-llm"><Text style={{ color: colors.primary }}>新增语言模型配置</Text></Pressable>
-    {llm ? <ProfileEditor key={llm.id} profile={llm} settings={settings} /> : null}
+    {llm ? <ProfileEditor key={llm.id} profile={llm} settings={settings} onCandidate={(id, notice) => { setEditingLlm(id); setError(notice); }} /> : null}
     <Text style={[styles.title, { color: colors.text }]}>语音模式</Text>
     <Text style={{ color: colors.textSecondary }}>豆包实时会话使用豆包自身回复；组合模式使用所选 LLM 和 TTS。</Text>
     <View style={styles.row}>
@@ -61,16 +70,18 @@ export function UniversalProviderSettings() {
       <Pressable onPress={() => add("tts")} testID="provider-add-tts"><Text style={{ color: colors.primary }}>新增通用 TTS</Text></Pressable>
     </View> : null}
     <View style={styles.row}>{settings.profiles.filter((p) => p.role === voiceRole).map((p) => <Pressable key={p.id} onPress={() => setEditingVoice(p.id)}><Text style={{ color: colors.primary }}>{p.displayName}{p.id === activeProfile(settings, "voice")?.id ? " · 已选用" : ""}</Text></Pressable>)}</View>
-    {voice ? <ProfileEditor key={voice.id} profile={voice} settings={settings} /> : <Text style={{ color: colors.textSecondary }}>先新增一份 TTS 配置；原豆包仍保留。</Text>}
+    {voice ? <ProfileEditor key={voice.id} profile={voice} settings={settings} onCandidate={(id, notice) => { setEditingVoice(id); setError(notice); }} /> : <Text style={{ color: colors.textSecondary }}>先新增一份 TTS 配置；原豆包仍保留。</Text>}
+    {error ? <Text style={{ color: colors.textSecondary }} accessibilityLiveRegion="polite">{error}</Text> : null}
     <Text style={{ color: colors.warning }}>测试版：真机打断时延、回声、蓝牙、来电和 iOS 尚未验收。</Text>
   </View>;
 }
-function ProfileEditor({ profile, settings }: { profile: ServiceProfile; settings: ProviderSettingsV2 }) {
+function ProfileEditor({ profile, settings, onCandidate }: { profile: ServiceProfile; settings: ProviderSettingsV2; onCandidate(id: string, notice: string): void }) {
   const { colors } = useTheme();
   const [draft, setDraft] = useState(profile);
   const [keyDraft, setKeyDraft] = useState("");
   const [last4, setLast4] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
+  const [fromCache, setFromCache] = useState(false);
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -85,14 +96,14 @@ function ProfileEditor({ profile, settings }: { profile: ServiceProfile; setting
     if (profile.role === "realtime" || !profile.baseUrl.trim()) return;
     const generation = ++epoch.current;
     const controller = new AbortController();
-    try { setCatalog(cachedCatalog(profile)); } catch { setCatalog(null); }
+    try { const cached = cachedCatalog(profile); setCatalog(cached); setFromCache(Boolean(cached)); } catch { setCatalog(null); setFromCache(false); }
     const timer = setTimeout(() => {
       if (generation !== epoch.current) return;
       setMessage("正在获取模型目录…");
       const timeout = setTimeout(() => controller.abort(), 20_000);
       void discoverModels(profile, controller.signal).then((result) => {
         if (generation !== epoch.current || controller.signal.aborted) return;
-        setCatalog(result); setMessage(result.complete ? "模型目录已获取；请选择模型或手填 ID，调用权限仍需验证。" : "目录不完整，仍可手填模型 ID。");
+        setCatalog(result); setFromCache(false); setMessage(result.complete ? "模型目录已获取；请选择模型或手填 ID，调用权限仍需验证。" : "目录不完整，仍可手填模型 ID。");
       }).catch((failure: unknown) => {
         if (generation === epoch.current) setMessage(controller.signal.aborted ? "目录查询已取消或超时，可重试或手填" : failure instanceof Error ? failure.message : "目录查询失败，可手填");
       }).finally(() => clearTimeout(timeout));
@@ -102,15 +113,30 @@ function ProfileEditor({ profile, settings }: { profile: ServiceProfile; setting
   const field = (name: keyof ServiceProfile, label: string, testID: string) => <TextInput editable={!busy} testID={testID} value={String(draft[name] ?? "")} onChangeText={(value) => setDraft((p) => ({ ...p, [name]: value }))} autoCapitalize="none" placeholder={label} placeholderTextColor={colors.textTertiary} accessibilityLabel={label} style={[styles.input, { color: colors.text, borderColor: colors.border }]} />;
   const save = async (): Promise<ServiceProfile> => {
     if (draft.role !== "realtime") normalizeServiceBaseUrl(draft.baseUrl);
-    const next = updateServiceProfile(draft);
-    if (keyDraft.trim()) { await getSecureCredentialStore().set(draft.credentialRef, keyDraft.trim()); setKeyDraft(""); }
-    const saved = loadProviderProfiles()?.profiles.find((p) => p.id === draft.id) ?? next.profiles.find((p) => p.id === draft.id)!;
+    const current = loadProviderProfiles();
+    if (!current) throw new Error("配置尚未初始化");
+    const previous = current.profiles.find((p) => p.id === draft.id);
+    const active = activeProfile(current, draft.role === "llm" ? "llm" : "voice");
+    let candidate = draft;
+    if (previous && active?.id === previous.id && isProfileVerified(previous, current.verification)) {
+      if (JSON.stringify(draft) === JSON.stringify(previous) && !keyDraft.trim()) return previous;
+      // Keep the enabled profile and its secret intact until the edited candidate passes.
+      const id = `${draft.role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      candidate = { ...draft, id, displayName: `${draft.displayName}（新配置）`, credentialRef: `profile.${id}`, configRevision: 1, credentialRevision: 0 };
+    }
+    const next = updateServiceProfile(candidate);
+    const credentials = getSecureCredentialStore();
+    const value = keyDraft.trim() || (candidate.id !== draft.id ? await credentials.get(draft.credentialRef) : null);
+    if (value) { await credentials.set(candidate.credentialRef, value); setKeyDraft(""); }
+    const saved = loadProviderProfiles()?.profiles.find((p) => p.id === candidate.id) ?? next.profiles.find((p) => p.id === candidate.id)!;
     setDraft(saved); return saved;
   };
   const verify = async () => {
     setBusy(true); disconnectActiveVoiceSession();
+    let saved: ServiceProfile | undefined;
+    let notice = "验证失败，可修正配置后重试";
     try {
-      const saved = await save();
+      saved = await save();
       const key = await getSecureCredentialStore().get(saved.credentialRef);
       let live = false;
       if (saved.role === "llm") {
@@ -127,9 +153,12 @@ function ProfileEditor({ profile, settings }: { profile: ServiceProfile; setting
         live = true;
       }
       if (!mounted.current) return;
-      recordProfileVerification(saved, live); setMessage("验证成功，可启用此配置。真机性能仍待验收。");
-    } catch (failure) { if (mounted.current) setMessage(failure instanceof Error ? failure.message : "验证失败"); }
-    finally { if (mounted.current) setBusy(false); }
+      recordProfileVerification(saved, live); notice = "验证成功，可启用此配置。真机性能仍待验收。"; setMessage(notice);
+    } catch (failure) {
+      if (saved && mounted.current) recordProfileVerification(saved, false);
+      notice = failure instanceof Error ? failure.message : "验证失败";
+      if (mounted.current) setMessage(notice);
+    } finally { if (mounted.current) { setBusy(false); if (saved?.id !== profile.id && saved) onCandidate(saved.id, notice); } }
   };
   const activate = () => {
     const current = loadProviderProfiles();
@@ -149,7 +178,9 @@ function ProfileEditor({ profile, settings }: { profile: ServiceProfile; setting
     {profile.role !== "realtime" ? <>
       <TextInput testID={`provider-${profile.role}-model-search`} value={query} onChangeText={setQuery} placeholder="搜索模型 ID / 名称 / 所属方" placeholderTextColor={colors.textTertiary} style={[styles.input, { color: colors.text, borderColor: colors.border }]} />
       <Pressable onPress={() => setRefresh((value) => value + 1)}><Text style={{ color: colors.primary }}>刷新模型目录</Text></Pressable>
-      {catalog ? <Text style={{ color: colors.textSecondary }}>目录时间：{catalog.fetchedAt} · {catalog.complete ? "接口目录" : "部分目录"}</Text> : null}
+      {catalog ? <Text style={{ color: colors.textSecondary }}>目录时间：{catalog.fetchedAt} · {fromCache ? "缓存" : "接口获取"} · {catalog.complete ? "完整目录" : "部分目录"}</Text> : null}
+      {catalog?.entries.length === 0 ? <Text style={{ color: colors.textSecondary }}>接口返回空目录，仍可手动填写模型 ID。</Text> : null}
+      {catalog && draft.modelId && !catalog.entries.some((item) => item.id === draft.modelId) ? <Text style={{ color: colors.textSecondary }}>当前模型 ID 未出现在目录中，已保留填写值；请通过实际调用验证权限。</Text> : null}
       {catalog?.entries.filter((m) => `${m.id} ${m.name} ${m.owner ?? ""}`.toLowerCase().includes(query.toLowerCase())).slice(0, 40).map((model) => <Pressable key={model.id} onPress={() => setDraft((p) => ({ ...p, modelId: model.id }))}><Text style={{ color: colors.text }}>{model.name} · {model.id}{/voiceclone|voicedesign/.test(model.id) ? "（本版本未支持额外参数）" : ""}</Text></Pressable>)}
     </> : <>{field("appId", "豆包 App ID", "provider-voice-app-id")}{field("region", "区域", "provider-voice-region")}</>}
     {profile.role === "tts" ? <>
@@ -159,7 +190,10 @@ function ProfileEditor({ profile, settings }: { profile: ServiceProfile; setting
     <Text style={{ color: colors.textSecondary }} testID={`provider-${profile.role}-key-mask`}>Key：{maskCredentialLast4(last4)} · {verified ? "调用已验证" : "尚未验证"}</Text>
     <TextInput value={keyDraft} onChangeText={setKeyDraft} secureTextEntry autoCapitalize="none" autoCorrect={false} placeholder="填写 Key / Token，仅存本机安全存储" placeholderTextColor={colors.textTertiary} testID={`provider-${profile.role}-key-input`} style={[styles.input, { color: colors.text, borderColor: colors.border }]} />
     <View style={styles.row}>
-      <Pressable disabled={busy} testID={`provider-${profile.role}-save`} onPress={() => { void save().then(() => setMessage("配置已保存，目录将自动获取，实际调用需验证")).catch((failure: unknown) => setMessage(failure instanceof Error ? failure.message : "保存失败")); }}><Text style={{ color: colors.primary }}>保存配置与 Key</Text></Pressable>
+      <Pressable disabled={busy} testID={`provider-${profile.role}-save`} onPress={() => { void save().then((saved) => {
+        const notice = "配置已保存，目录将自动获取，实际调用需验证";
+        setMessage(notice); if (saved.id !== profile.id) onCandidate(saved.id, notice);
+      }).catch((failure: unknown) => setMessage(failure instanceof Error ? failure.message : "保存失败")); }}><Text style={{ color: colors.primary }}>保存配置与 Key</Text></Pressable>
       <Pressable disabled={busy} testID={`test-connection-${profile.role}`} onPress={() => { void verify(); }}><Text style={{ color: colors.primary }}>{busy ? "验证中…" : profile.role === "tts" ? "试听并验证（可能计费）" : "验证连接（可能计费）"}</Text></Pressable>
       <Pressable disabled={busy} testID={`provider-${profile.role}-activate`} onPress={activate}><Text style={{ color: colors.primary }}>启用配置</Text></Pressable>
       <Pressable disabled={busy} testID={`provider-${profile.role}-clear-key`} onPress={() => {

@@ -82,7 +82,17 @@ export function recordProfileVerification(profile: ServiceProfile, live: boolean
 }
 
 // No cross-store transaction exists: copy and verify credentials before activating v2.
+const migrations = new WeakMap<object, Promise<ProviderSettingsV2>>();
 export async function migrateProviderProfiles(credentials: SecureCredentialStore): Promise<ProviderSettingsV2> {
+  const storage = getStorageSession()?.storage;
+  if (!storage) throw new Error("本地存储尚未就绪");
+  const pending = migrations.get(storage);
+  if (pending) return pending;
+  const operation = performMigration(credentials).finally(() => { migrations.delete(storage); });
+  migrations.set(storage, operation);
+  return operation;
+}
+async function performMigration(credentials: SecureCredentialStore): Promise<ProviderSettingsV2> {
   const existing = loadProviderProfiles();
   const storage = getStorageSession()?.storage;
   if (!storage) throw new Error("本地存储尚未就绪");

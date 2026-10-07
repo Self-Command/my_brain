@@ -41,7 +41,8 @@ export function normalizeServiceBaseUrl(raw: string): string {
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   const local = host === "localhost" || host.endsWith(".local") || host.endsWith(".internal") || host === "::1"
     || /^(0\.|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)
-    || (host.includes(":") && /^(fc|fd|fe80:)/.test(host));
+    || (host.includes(":") && (!/^[23][0-9a-f]{3}:/.test(host) || host.startsWith("2001:db8:")))
+    || /^(100\.(6[4-9]|[78]\d|9\d|1[01]\d|12[0-7])\.|198\.(18|19)\.|192\.0\.0\.)/.test(host);
   if (url.protocol !== "https:" || local || url.username || url.password || url.search || url.hash) {
     throw new Error("请填写公网 HTTPS API 基地址，不包含账号、查询参数或片段");
   }

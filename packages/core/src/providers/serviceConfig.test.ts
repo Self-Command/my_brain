@@ -7,7 +7,7 @@ const profile: ServiceProfile = { id: "example", displayName: "Example", role: "
 describe("configured services", () => {
   it("keeps proxy prefixes and rejects insecure or credential-bearing addresses", () => {
     expect(normalizeServiceBaseUrl(" https://example.com/proxy/v1/ ")).toBe(profile.baseUrl);
-    for (const url of ["http://example.com", "https://127.0.0.1", "https://user:password@example.com", "https://example.com?key=secret"]) expect(() => normalizeServiceBaseUrl(url)).toThrow();
+    for (const url of ["http://example.com", "https://127.0.0.1", "https://[::ffff:127.0.0.1]", "https://100.64.1.1", "https://user:password@example.com", "https://example.com?key=secret"]) expect(() => normalizeServiceBaseUrl(url)).toThrow();
   });
   it("submits the explicitly selected model and URL in actual explain requests", async () => {
     const fetch = vi.fn<LlmFetch>(async () => ({ ok: true, status: 200, text: async () => "", json: async () => ({ choices: [{ message: { content: "解释" } }] }) }));

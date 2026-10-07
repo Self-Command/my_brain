@@ -53,9 +53,9 @@ function resolveRadarFetch(explicit?: RadarFetch): RadarFetch {
 function createConfiguredLlmProvider(
   settings: LlmProviderConfig,
   apiKey: string,
-  fetchImpl: RadarFetch,
+  fetchImpl: LlmConnectionFetch,
 ): LlmProvider {
-  return createCoreConfiguredLlmProvider(settings, apiKey, fetchImpl as LlmConnectionFetch);
+  return createCoreConfiguredLlmProvider(settings, apiKey, fetchImpl);
 }
 
 export async function resolveMobileRadarSignals(
@@ -80,7 +80,7 @@ export async function resolveMobileRadarSignals(
   const llm =
     options.llm ??
     (liveEnabled && apiKey
-      ? createConfiguredLlmProvider(llmSettings, apiKey.trim(), options.fetch ?? providerFetch as LlmConnectionFetch)
+      ? createConfiguredLlmProvider(llmSettings, apiKey.trim(), options.fetch ? options.fetch as LlmConnectionFetch : providerFetch)
       : createMockLlmProvider());
 
   const result = await fetchLiveRadarSignals({
